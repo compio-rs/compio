@@ -44,6 +44,10 @@ jobs:
             features: 'sync'
           - os: 'ubuntu-24.04'
             features: 'compat-all'
+          # `io-compat-tokio` is not part of `all`; `ring` for the h2 test of
+          # compio-tls.
+          - os: 'ubuntu-24.04'
+            features: 'io-compat-tokio,ring'
           - os: 'ubuntu-24.04'
             features: 'polling,ring,compat-all'
             no_default_features: true

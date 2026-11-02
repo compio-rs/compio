@@ -1,4 +1,4 @@
-#[cfg(feature = "read_buf")]
+#[cfg(any(feature = "read_buf", feature = "tokio"))]
 use std::mem::MaybeUninit;
 use std::{
     cell::RefCell,
@@ -46,7 +46,7 @@ pub fn read(fd: BorrowedFd<'_>, buf: &mut [u8]) -> io::Result<usize> {
     rustix::io::read(fd, buf).map_err(Into::into)
 }
 
-#[cfg(feature = "read_buf")]
+#[cfg(any(feature = "read_buf", feature = "tokio"))]
 pub fn read_uninit(fd: BorrowedFd<'_>, buf: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
     rustix::io::read(fd, buf)
         .map(|(initialized, _)| initialized.len())

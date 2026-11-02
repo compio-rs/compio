@@ -78,6 +78,13 @@ polling = ["compio-driver/polling"]
 actor = ["dep:compio-actor"]
 io = ["dep:compio-io"]
 io-compat = ["io", "compio-io/compat", "compio-quic?/io-compat"]
+# `tokio::io` traits on the `io-compat` adapters, `PollFd` and the TLS streams
+io-compat-tokio = [
+    "io-compat",
+    "compio-io/tokio",
+    "compio-runtime?/tokio",
+    "compio-tls?/tokio",
+]
 io-ancillary = ["io", "compio-io/ancillary"]
 io-codec-serde-json = ["io", "compio-io/codec-serde-json"]
 fs = ["dep:compio-fs", "runtime", "io"]

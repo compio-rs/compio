@@ -31,6 +31,9 @@ mod compat;
 #[cfg(any(feature = "native-tls", feature = "py-dynamic-openssl"))]
 pub(crate) use compat::*;
 
+#[cfg(feature = "tokio")]
+mod tokio_io;
+
 #[cfg(feature = "rustls")]
 mod rtls;
 #[cfg(feature = "rustls")]

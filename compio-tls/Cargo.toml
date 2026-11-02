@@ -28,10 +28,16 @@ futures-rustls = { workspace = true, default-features = false, optional = true, 
 ] }
 futures-util = { workspace = true, features = ["io"] }
 pin-project-lite = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
-compio-runtime = { workspace = true }
+compio-runtime = { workspace = true, features = ["tokio"] }
 compio-macros = { workspace = true }
+compio-net = { workspace = true }
+
+bytes = { workspace = true }
+h2 = { workspace = true }
+http = { workspace = true }
 
 rand = "0.10.0"
 rcgen = { workspace = true }
@@ -39,6 +45,7 @@ rsa = "0.10.0-rc.17"
 rustls = { workspace = true, default-features = false, features = ["ring"] }
 socket2 = { workspace = true }
 tempfile = { workspace = true }
+tokio = { workspace = true }
 
 futures-rustls = { workspace = true, default-features = false, features = [
     "ring",
@@ -53,3 +60,10 @@ native-tls-vendored = ["native-tls/vendored"]
 py-dynamic-openssl = ["dep:compio-py-dynamic-openssl", "dep:pin-project-lite"]
 
 ring = ["rustls", "rustls/ring", "futures-rustls/ring"]
+
+# `tokio::io` traits on the TLS streams
+tokio = ["dep:tokio"]
+
+[[test]]
+name = "h2"
+required-features = ["ring", "tokio"]
