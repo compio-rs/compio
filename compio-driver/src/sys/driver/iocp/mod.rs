@@ -1,6 +1,9 @@
 use std::{
-    collections::HashMap, marker::PhantomData, os::windows::io::AsRawHandle, sync::Arc,
-    time::Duration,
+    collections::{HashMap, HashSet},
+    marker::PhantomData,
+    os::windows::io::AsRawHandle,
+    sync::Arc,
+    time::{Duration, Instant},
 };
 
 use flume::{Receiver, Sender};
@@ -9,6 +12,7 @@ use windows_sys::Win32::{Foundation::ERROR_OPERATION_ABORTED, System::IO::OVERLA
 use crate::{
     AsyncifyPool, DriverType, Entry, ErasedKey, ProactorBuilder,
     control::Carrier,
+    key::BorrowedKey,
     sys::{driver::AwakeFlag, extra::IocpExtra, prelude::*},
 };
 
@@ -34,6 +38,8 @@ pub enum OpType {
 pub(crate) struct Driver {
     notify: Arc<Notify>,
     waits: HashMap<usize, wait::Wait>,
+    /// The operations the I/O manager is currently executing.
+    in_flight: HashSet<*mut Overlapped>,
     pool: AsyncifyPool,
     completed_tx: Sender<Entry>,
     completed_rx: Receiver<Entry>,
@@ -55,6 +61,7 @@ impl Driver {
             completed_tx,
             completed_rx,
             waits: HashMap::default(),
+            in_flight: HashSet::default(),
             pool: builder.create_or_get_thread_pool(),
             _local_marker: PhantomData,
         })
@@ -102,9 +109,13 @@ impl Driver {
         match op_type {
             OpType::Overlapped => unsafe {
                 let res = op.carrier.operate(optr.cast());
+                let owned = std::ptr::eq(op.extra().driver(), self.port().as_raw_handle());
                 drop(op);
                 if res.is_pending() {
-                    key.into_raw();
+                    let _ = key.into_raw();
+                    if owned {
+                        self.in_flight.insert(optr);
+                    }
                 }
                 res
             },
@@ -149,17 +160,20 @@ impl Driver {
 
     fn create_entry(
         notify: *const Overlapped,
+        in_flight: &mut HashSet<*mut Overlapped>,
         waits: &mut HashMap<usize, wait::Wait>,
         entry: cp::RawEntry,
     ) -> Option<Entry> {
-        if entry.overlapped.cast_const() == notify {
+        let optr = entry.overlapped;
+        if optr.cast_const() == notify {
             return None;
         }
 
-        let entry = Entry::new(
-            unsafe { ErasedKey::from_optr(entry.overlapped) },
-            entry.result,
-        );
+        // The I/O manager has released the operation. Event waits are not
+        // tracked in `in_flight`.
+        in_flight.remove(&optr);
+
+        let entry = Entry::new(unsafe { ErasedKey::from_optr(optr) }, entry.result);
 
         // if there's no wait, just return the entry
         let Some(w) = waits.remove(&entry.user_data()) else {
@@ -203,7 +217,8 @@ impl Driver {
         };
         let result = self.notify.port.poll(timeout).map(|entries| {
             for e in entries {
-                if let Some(e) = Self::create_entry(notify, &mut self.waits, e) {
+                if let Some(e) = Self::create_entry(notify, &mut self.in_flight, &mut self.waits, e)
+                {
                     self.notify.set_awake();
                     e.notify()
                 }
@@ -230,6 +245,73 @@ impl Driver {
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
         self.port().as_raw_handle() as _
+    }
+}
+
+impl Drop for Driver {
+    fn drop(&mut self) {
+        const DROP_TIMEOUT: Duration = Duration::from_secs(1);
+
+        for &optr in &self.in_flight {
+            // SAFETY: `push` leaked the key and it is still in flight.
+            let key = unsafe { BorrowedKey::from_optr(optr) };
+            let mut op = key.borrow();
+            if let Err(e) = op.carrier.cancel(optr.cast()) {
+                trace!("failed to cancel in-flight op on drop: {e:?}");
+            }
+        }
+
+        let deadline = Instant::now() + DROP_TIMEOUT;
+        let notify = &self.notify.overlapped as *const Overlapped;
+
+        while !self.in_flight.is_empty() {
+            let now = Instant::now();
+            if now >= deadline {
+                break;
+            }
+            let timeout = (deadline - now).max(Duration::from_millis(1));
+
+            let entries = match self.notify.port.poll(Some(timeout)) {
+                Ok(entries) => entries,
+                Err(e) => {
+                    warn!("failed to poll IOCP while dropping the driver: {e:?}");
+                    break;
+                }
+            };
+
+            for entry in entries {
+                let optr = entry.overlapped;
+                if optr.cast_const() == notify {
+                    continue;
+                }
+
+                if self.in_flight.remove(&optr) {
+                    drop(unsafe { ErasedKey::from_optr(optr) });
+                } else {
+                    trace!("ignore untracked completion while dropping the driver");
+                }
+            }
+        }
+
+        if !self.in_flight.is_empty() {
+            warn!(
+                "leaking {} in-flight IOCP op(s) on driver drop; the I/O manager did not finish \
+                 cancelling them within {DROP_TIMEOUT:?}",
+                self.in_flight.len()
+            );
+        }
+
+        let mut leaked = 0;
+        for (key, w) in std::mem::take(&mut self.waits) {
+            if w.cancel_for_drop() {
+                drop(unsafe { ErasedKey::from_raw(key) });
+            } else {
+                leaked += 1;
+            }
+        }
+        if leaked > 0 {
+            warn!("leaking {leaked} pending IOCP event wait(s) on driver drop");
+        }
     }
 }
 

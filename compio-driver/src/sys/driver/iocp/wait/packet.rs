@@ -78,10 +78,20 @@ impl Wait {
         })
     }
 
+    fn cancel_impl(&mut self) -> NTSTATUS {
+        unsafe { NtCancelWaitCompletionPacket(self.handle.as_raw_handle() as _, false) }
+    }
+
     pub fn cancel(&mut self) -> io::Result<()> {
-        let res = unsafe { NtCancelWaitCompletionPacket(self.handle.as_raw_handle() as _, false) };
+        let res = self.cancel_impl();
         self.cancelled = res != STATUS_PENDING;
         check_status(res)
+    }
+
+    pub fn cancel_for_drop(mut self) -> bool {
+        let res = self.cancel_impl();
+        drop(self);
+        res == STATUS_SUCCESS
     }
 
     pub fn is_cancelled(&self) -> bool {

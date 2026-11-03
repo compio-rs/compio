@@ -71,6 +71,11 @@ impl Wait {
         Err(io::Error::from_raw_os_error(ERROR_IO_PENDING as _))
     }
 
+    pub fn cancel_for_drop(self) -> bool {
+        drop(self);
+        true
+    }
+
     pub fn is_cancelled(&self) -> bool {
         false
     }
