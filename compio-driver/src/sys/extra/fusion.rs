@@ -1,4 +1,4 @@
-pub(in crate::sys) use iour::IourExtra;
+pub(in crate::sys) use iour::{IourExtra, Linked};
 pub(in crate::sys) use poll::PollExtra;
 
 use super::{iour, poll};
