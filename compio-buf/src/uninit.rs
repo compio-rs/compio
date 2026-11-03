@@ -61,8 +61,15 @@ impl<T: IoBufMut> IoBufMut for Uninit<T> {
 
 impl<T: SetLen + IoBuf> SetLen for Uninit<T> {
     unsafe fn set_len(&mut self, len: usize) {
+        let begin = self.0.begin() + len;
         unsafe {
             self.0.set_len(len);
+        }
+        // Re-anchor the view, otherwise `as_init` and `as_uninit` would start
+        // at different offsets.
+        // SAFETY: `begin` is the new length of the underlying view.
+        unsafe {
+            self.0.set_begin_unchecked(begin);
         }
     }
 }
