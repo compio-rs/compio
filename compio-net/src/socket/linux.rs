@@ -83,4 +83,12 @@ impl AsSocketState for SocketWithState {
     fn accept_poll_first(&self) -> bool {
         self.state.accept_poll_first()
     }
+
+    fn set_recv(&self, extra: &Extra) {
+        self.state.set_recv(extra);
+    }
+
+    fn set_accept(&self, extra: &Extra) {
+        self.state.set_accept(extra);
+    }
 }

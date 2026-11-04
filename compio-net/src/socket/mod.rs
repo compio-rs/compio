@@ -15,8 +15,8 @@ use compio_driver::op::Disconnect;
 #[cfg(unix)]
 use compio_driver::op::{Bind, CreateSocket, Listen, ShutdownSocket};
 use compio_driver::{
-    AsFd, AsRawFd, BorrowedFd, BufferRef, Extra, OpCode, RawFd, ResultTakeBuffer, SharedFd,
-    TakeBuffer, ToSharedFd,
+    AsFd, AsRawFd, BorrowedFd, BufferRef, OpCode, RawFd, ResultTakeBuffer, SharedFd, TakeBuffer,
+    ToSharedFd,
     op::{
         Accept, BufResultExt, CloseSocket, Connect, Recv, RecvFlags, RecvFrom, RecvFromManaged,
         RecvFromMulti, RecvFromMultiResult, RecvFromVectored, RecvManaged, RecvMsg, RecvMsgManaged,
@@ -89,15 +89,6 @@ impl SocketWithState {
 
     fn into_inner(self) -> Socket2 {
         self.inner
-    }
-
-    fn set_recv(&self, extra: &Extra) {
-        self.state.set_recv(extra);
-    }
-
-    #[allow(unused)]
-    fn set_accept(&self, extra: &Extra) {
-        self.state.set_accept(extra);
     }
 }
 
@@ -213,7 +204,7 @@ impl Socket {
         let mut op = Accept::new(self.to_shared_fd());
         let (BufResult(res, op), extra) = compio_runtime::submit(op).with_extra().await;
         res?;
-        self.socket.set_accept(&extra);
+        extra.update_socket_state(&*self.socket);
         let (accept_sock, addr) = op.into_inner();
         let accept_sock = Self::from_socket2(accept_sock)?;
         Ok((accept_sock, addr))
@@ -284,7 +275,7 @@ impl Socket {
         let fd = self.to_shared_fd();
         let op = Recv::new(fd, buffer, flags);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
-        self.socket.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
         let res = res.into_inner();
         unsafe { res.map_advanced() }
     }
@@ -297,7 +288,7 @@ impl Socket {
         let fd = self.to_shared_fd();
         let op = RecvVectored::new(fd, buffer, flags);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
-        self.socket.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
         let res = res.into_inner();
         unsafe { res.map_vec_advanced() }
     }
@@ -315,7 +306,7 @@ impl Socket {
         })?
         .await;
 
-        self.socket.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
 
         unsafe { res.take_buffer() }
     }
@@ -374,7 +365,7 @@ impl Socket {
         let fd = self.to_shared_fd();
         let op = RecvFrom::new(fd, buffer, flags);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
-        self.socket.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
         let res = res.into_inner().map_addr();
         unsafe { res.map_advanced() }
     }
@@ -387,7 +378,7 @@ impl Socket {
         let fd = self.to_shared_fd();
         let op = RecvFromVectored::new(fd, buffer, flags);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
-        self.socket.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
         let res = res.into_inner().map_addr();
         unsafe { res.map_vec_advanced() }
     }
@@ -404,7 +395,7 @@ impl Socket {
             io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;
-        self.socket.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
         let (len, op) = buf_try!(@try inner);
         // Kernel returns 0 for the operation, drop the buffer and return
         // Ok(None)
@@ -454,7 +445,7 @@ impl Socket {
         let fd = self.to_shared_fd();
         let op = RecvMsg::new(fd, buffer, control, flags);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
-        self.socket.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
         let res = res.into_inner().map_addr();
         unsafe { res.map_vec_advanced() }
     }
@@ -472,7 +463,7 @@ impl Socket {
             io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;
-        self.socket.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
         let (len, op) = buf_try!(@try inner);
         // Kernel returns 0 for the operation, drop the buffer and return
         // Ok(None)

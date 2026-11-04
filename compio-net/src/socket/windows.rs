@@ -9,7 +9,7 @@ use std::{
     task::Poll,
 };
 
-use compio_driver::{AsSocketState, Extra, win32_result, winsock_result};
+use compio_driver::{AsSocketState, win32_result, winsock_result};
 use once_cell::sync::OnceCell as OnceLock;
 use socket2::socklen_t;
 use windows_sys::{
@@ -117,22 +117,9 @@ pub(super) struct SocketState {
     wsa: Box<WsaFns>,
 }
 
-#[allow(dead_code)]
 impl SocketState {
     pub(super) fn new() -> Self {
         SocketState::default()
-    }
-
-    pub(super) fn set_recv(&self, _: &Extra) {}
-
-    pub(super) fn set_accept(&self, _: &Extra) {}
-
-    pub(super) fn recv_poll_first(&self) -> bool {
-        false
-    }
-
-    pub(super) fn accept_poll_first(&self) -> bool {
-        false
     }
 }
 

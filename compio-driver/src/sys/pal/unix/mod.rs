@@ -24,6 +24,16 @@ pub trait AsSocketState: AsFd {
     fn accept_poll_first(&self) -> bool {
         false
     }
+
+    /// Update the state from a receive completion.
+    fn set_recv(&self, extra: &Extra) {
+        let _ = extra;
+    }
+
+    /// Same as [`AsSocketState::set_recv`], for accept.
+    fn set_accept(&self, extra: &Extra) {
+        let _ = extra;
+    }
 }
 
 impl<T: AsSocketState> AsSocketState for crate::SharedFd<T> {
@@ -33,6 +43,14 @@ impl<T: AsSocketState> AsSocketState for crate::SharedFd<T> {
 
     fn accept_poll_first(&self) -> bool {
         (**self).accept_poll_first()
+    }
+
+    fn set_recv(&self, extra: &Extra) {
+        (**self).set_recv(extra)
+    }
+
+    fn set_accept(&self, extra: &Extra) {
+        (**self).set_accept(extra)
     }
 }
 
