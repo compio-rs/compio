@@ -10,7 +10,7 @@ use rustix::{
     },
 };
 
-use crate::{PollFirst, sys::op::*};
+use crate::sys::op::*;
 
 impl<S: AsFd> Accept<S> {
     pub(crate) fn call(&mut self) -> io::Result<usize> {
@@ -89,7 +89,8 @@ impl<T: IoVectoredBuf, S: AsFd> SendToVectored<T, S> {
 impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> SendMsg<T, C, S> {
     pub(crate) fn call(&mut self, control: &mut SendMsgControl) -> io::Result<usize> {
         // Both rustix and nix expose api that uses structured AncillaryBuffer
-        // building, no way to just throw in an ancillary buf. Fallback to libc here.
+        // building, no way to just throw in an ancillary buf. Fallback to libc
+        // here.
         syscall!(libc::sendmsg(
             self.fd.as_fd().as_raw_fd(),
             &control.msg,
@@ -310,7 +311,6 @@ pub struct Accept<S> {
     pub(crate) buffer: SockAddrStorage,
     pub(crate) addr_len: socklen_t,
     pub(crate) accepted_fd: Option<Socket2>,
-    pub(crate) poll_first: bool,
 }
 
 impl<S> Accept<S> {
@@ -323,14 +323,7 @@ impl<S> Accept<S> {
             buffer,
             addr_len,
             accepted_fd: None,
-            poll_first: false,
         }
-    }
-}
-
-impl<S> PollFirst for Accept<S> {
-    fn poll_first(&mut self) {
-        self.poll_first = true;
     }
 }
 

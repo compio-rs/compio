@@ -3,9 +3,7 @@ use rustix::net::{RecvFlags, ReturnFlags};
 use socket2::SockAddr;
 
 use super::{fallback, iour};
-use crate::{
-    BufferPool, BufferRef, IourOpCode, OpEntry, OpType, PollFirst, PollOpCode, sys::pal::*,
-};
+use crate::{BufferPool, BufferRef, IourOpCode, OpEntry, OpType, PollOpCode, sys::pal::*};
 
 macro_rules! mop {
     (<$($ty:ident: $trait:ident),* $(,)?> $name:ident( $($arg:ident: $arg_t:ty),* $(,)? ) with $pool:ident) => {
@@ -132,33 +130,6 @@ mop!(<S: AsFd> ReadMulti(fd: S, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> RecvMulti(fd: S, pool: &BufferPool, len: usize, flags: RecvFlags) with pool);
 mop!(<S: AsFd> RecvFromMulti(fd: S, pool: &BufferPool, flags: RecvFlags) with pool; RecvFromMultiResult);
 mop!(<S: AsFd> RecvMsgMulti(fd: S, pool: &BufferPool, control_len: usize, flags: RecvFlags) with pool; RecvMsgMultiResult);
-
-impl<S: AsFd> PollFirst for RecvManaged<S> {
-    fn poll_first(&mut self) {
-        match self.inner {
-            RecvManagedInner::Poll(ref mut i) => i.poll_first(),
-            RecvManagedInner::IoUring(ref mut i) => i.poll_first(),
-        }
-    }
-}
-
-impl<S: AsFd> PollFirst for RecvFromManaged<S> {
-    fn poll_first(&mut self) {
-        match self.inner {
-            RecvFromManagedInner::Poll(ref mut i) => i.poll_first(),
-            RecvFromManagedInner::IoUring(ref mut i) => i.poll_first(),
-        }
-    }
-}
-
-impl<C: IoBufMut, S: AsFd> PollFirst for RecvMsgManaged<C, S> {
-    fn poll_first(&mut self) {
-        match self.inner {
-            RecvMsgManagedInner::Poll(ref mut i) => i.poll_first(),
-            RecvMsgManagedInner::IoUring(ref mut i) => i.poll_first(),
-        }
-    }
-}
 
 enum RecvFromMultiResultInner {
     Poll(fallback::RecvFromMultiResult),

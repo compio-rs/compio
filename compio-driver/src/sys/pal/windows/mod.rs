@@ -1,22 +1,21 @@
-use std::{fmt, io, ptr, task::Poll};
+use std::{ffi::c_void, fmt, io, task::Poll};
 
+use socket2::socklen_t;
 pub use windows_sys::Win32::Networking::WinSock::CMSGHDR as CmsgHeader;
-use windows_sys::{
-    Win32::{
-        Foundation::{
-            ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_IO_PENDING,
-            ERROR_MORE_DATA, ERROR_NETNAME_DELETED, ERROR_NO_DATA, ERROR_NOT_FOUND,
-            ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED, GetLastError,
-        },
-        Networking::WinSock::{
-            SIO_GET_EXTENSION_FUNCTION_POINTER, WSAECONNRESET, WSAGetLastError, WSAIoctl,
-        },
-        System::IO::{CancelIoEx, OVERLAPPED},
+use windows_sys::Win32::{
+    Foundation::{
+        ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_IO_PENDING,
+        ERROR_MORE_DATA, ERROR_NETNAME_DELETED, ERROR_NO_DATA, ERROR_NOT_FOUND,
+        ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED, GetLastError,
     },
-    core::GUID,
+    Networking::WinSock::{
+        LPWSAOVERLAPPED_COMPLETION_ROUTINE, SOCKADDR, SOCKET, WSAECONNRESET, WSAGetLastError,
+        WSAMSG,
+    },
+    System::IO::{CancelIoEx, OVERLAPPED},
 };
 
-use crate::syscall;
+use crate::{SharedFd, syscall};
 
 mod_use::mod_use![fd];
 
@@ -89,6 +88,11 @@ pub fn winapi_result(transferred: u32, error: u32) -> io::Result<usize> {
     }
 }
 
+/// Convert the result of a Win32 call to a driver result.
+///
+/// `ERROR_IO_PENDING` becomes [`Poll::Pending`], the "operation completed but
+/// with a trailing condition" errors become [`Poll::Ready`] with the
+/// transferred bytes, and anything else becomes an error.
 #[inline]
 pub fn win32_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     if res == 0 {
@@ -98,6 +102,7 @@ pub fn win32_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     }
 }
 
+/// Same as [`win32_result`], but reads the error from `WSAGetLastError`.
 #[inline]
 pub fn winsock_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
     if res != 0 {
@@ -121,22 +126,198 @@ pub fn cancel(handle: RawFd, optr: *mut OVERLAPPED) -> io::Result<()> {
     }
 }
 
-pub fn get_wsa_fn<F>(handle: RawFd, fguid: GUID) -> io::Result<Option<F>> {
-    let mut fptr = None;
-    let mut returned = 0;
-    syscall!(
-        SOCKET,
-        WSAIoctl(
-            handle as _,
-            SIO_GET_EXTENSION_FUNCTION_POINTER,
-            std::ptr::addr_of!(fguid).cast(),
-            std::mem::size_of_val(&fguid) as _,
-            std::ptr::addr_of_mut!(fptr).cast(),
-            std::mem::size_of::<F>() as _,
-            &mut returned,
-            ptr::null_mut(),
-            None,
-        )
-    )?;
-    Ok(fptr)
+/// Per-socket state needed by the asynchronous operations.
+///
+/// The winsock extensions (`AcceptEx`, `ConnectEx`, ...) are resolved per
+/// socket: the pointers returned by `SIO_GET_EXTENSION_FUNCTION_POINTER` belong
+/// to the provider serving that socket, and sharing them with another socket
+/// crashes when a layered service provider is installed.
+#[allow(unused_variables, clippy::too_many_arguments)]
+pub trait AsSocketState: AsFd {
+    /// `AcceptEx`.
+    ///
+    /// # Safety
+    ///
+    /// `output_buffer` must be large enough for both addresses,
+    /// `bytes_received` must be valid for writes, and `overlapped` must
+    /// outlive the operation.
+    unsafe fn wsa_accept_ex(
+        &self,
+        accept_socket: SOCKET,
+        output_buffer: *mut c_void,
+        receive_data_length: u32,
+        local_address_length: u32,
+        remote_address_length: u32,
+        bytes_received: *mut u32,
+        overlapped: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>> {
+        Poll::Ready(Err(unsupported()))
+    }
+
+    /// `GetAcceptExSockaddrs`.
+    ///
+    /// # Safety
+    ///
+    /// `output_buffer` must hold the addresses written by
+    /// [`AsSocketState::wsa_accept_ex`], and the output pointers must be valid
+    /// for writes.
+    unsafe fn wsa_get_accept_ex_sockaddrs(
+        &self,
+        output_buffer: *const c_void,
+        receive_data_length: u32,
+        local_address_length: u32,
+        remote_address_length: u32,
+        local_sockaddr: *mut *mut SOCKADDR,
+        local_sockaddr_length: *mut socklen_t,
+        remote_sockaddr: *mut *mut SOCKADDR,
+        remote_sockaddr_length: *mut socklen_t,
+    ) -> io::Result<()> {
+        Err(unsupported())
+    }
+
+    /// `ConnectEx`.
+    ///
+    /// # Safety
+    ///
+    /// `name` must be valid for `name_length` bytes, `bytes_sent` must be valid
+    /// for writes, and `overlapped` must outlive the operation.
+    unsafe fn wsa_connect_ex(
+        &self,
+        name: *const SOCKADDR,
+        name_length: socklen_t,
+        send_buffer: *const c_void,
+        send_data_length: u32,
+        bytes_sent: *mut u32,
+        overlapped: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>> {
+        Poll::Ready(Err(unsupported()))
+    }
+
+    /// `DisconnectEx`.
+    ///
+    /// # Safety
+    ///
+    /// `overlapped` must outlive the operation.
+    unsafe fn wsa_disconnect_ex(
+        &self,
+        overlapped: *mut OVERLAPPED,
+        flags: u32,
+        reserved: u32,
+    ) -> Poll<io::Result<usize>> {
+        Poll::Ready(Err(unsupported()))
+    }
+
+    /// `WSARecvMsg`.
+    ///
+    /// # Safety
+    ///
+    /// `msg` must describe buffers that outlive the operation, `bytes_received`
+    /// must be valid for writes, and `overlapped` must outlive it too.
+    unsafe fn wsa_recv_msg(
+        &self,
+        msg: *mut WSAMSG,
+        bytes_received: *mut u32,
+        overlapped: *mut OVERLAPPED,
+        completion_routine: LPWSAOVERLAPPED_COMPLETION_ROUTINE,
+    ) -> Poll<io::Result<usize>> {
+        Poll::Ready(Err(unsupported()))
+    }
+}
+
+impl<T: AsSocketState> AsSocketState for SharedFd<T> {
+    unsafe fn wsa_accept_ex(
+        &self,
+        accept_socket: SOCKET,
+        output_buffer: *mut c_void,
+        receive_data_length: u32,
+        local_address_length: u32,
+        remote_address_length: u32,
+        bytes_received: *mut u32,
+        overlapped: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>> {
+        unsafe {
+            (**self).wsa_accept_ex(
+                accept_socket,
+                output_buffer,
+                receive_data_length,
+                local_address_length,
+                remote_address_length,
+                bytes_received,
+                overlapped,
+            )
+        }
+    }
+
+    unsafe fn wsa_get_accept_ex_sockaddrs(
+        &self,
+        output_buffer: *const c_void,
+        receive_data_length: u32,
+        local_address_length: u32,
+        remote_address_length: u32,
+        local_sockaddr: *mut *mut SOCKADDR,
+        local_sockaddr_length: *mut socklen_t,
+        remote_sockaddr: *mut *mut SOCKADDR,
+        remote_sockaddr_length: *mut socklen_t,
+    ) -> io::Result<()> {
+        unsafe {
+            (**self).wsa_get_accept_ex_sockaddrs(
+                output_buffer,
+                receive_data_length,
+                local_address_length,
+                remote_address_length,
+                local_sockaddr,
+                local_sockaddr_length,
+                remote_sockaddr,
+                remote_sockaddr_length,
+            )
+        }
+    }
+
+    unsafe fn wsa_connect_ex(
+        &self,
+        name: *const SOCKADDR,
+        name_length: socklen_t,
+        send_buffer: *const c_void,
+        send_data_length: u32,
+        bytes_sent: *mut u32,
+        overlapped: *mut OVERLAPPED,
+    ) -> Poll<io::Result<usize>> {
+        unsafe {
+            (**self).wsa_connect_ex(
+                name,
+                name_length,
+                send_buffer,
+                send_data_length,
+                bytes_sent,
+                overlapped,
+            )
+        }
+    }
+
+    unsafe fn wsa_disconnect_ex(
+        &self,
+        overlapped: *mut OVERLAPPED,
+        flags: u32,
+        reserved: u32,
+    ) -> Poll<io::Result<usize>> {
+        unsafe { (**self).wsa_disconnect_ex(overlapped, flags, reserved) }
+    }
+
+    unsafe fn wsa_recv_msg(
+        &self,
+        msg: *mut WSAMSG,
+        bytes_received: *mut u32,
+        overlapped: *mut OVERLAPPED,
+        completion_routine: LPWSAOVERLAPPED_COMPLETION_ROUTINE,
+    ) -> Poll<io::Result<usize>> {
+        unsafe { (**self).wsa_recv_msg(msg, bytes_received, overlapped, completion_routine) }
+    }
+}
+
+/// The error of the default [`AsSocketState`] implementations.
+fn unsupported() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::Unsupported,
+        "the socket does not provide this winsock extension",
+    )
 }

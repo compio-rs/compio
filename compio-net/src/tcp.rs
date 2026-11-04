@@ -25,7 +25,8 @@ use futures_util::{Stream, StreamExt, stream::FusedStream};
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
 use crate::{
-    Extract, Incoming, MSG_NOSIGNAL, ReadHalf, Socket, ToSocketAddrsAsync, WriteHalf, Zerocopy,
+    Extract, Incoming, MSG_NOSIGNAL, ReadHalf, Socket, SocketWithState, ToSocketAddrsAsync,
+    WriteHalf, Zerocopy,
 };
 
 /// A TCP socket server, listening for connections.
@@ -173,12 +174,12 @@ impl TcpListener {
     }
 
     /// Create [`PollFd`] from inner socket.
-    pub fn to_poll_fd(&self) -> io::Result<PollFd<Socket2>> {
+    pub fn to_poll_fd(&self) -> io::Result<PollFd<SocketWithState>> {
         self.inner.to_poll_fd()
     }
 
     /// Create [`PollFd`] from inner socket.
-    pub fn into_poll_fd(self) -> io::Result<PollFd<Socket2>> {
+    pub fn into_poll_fd(self) -> io::Result<PollFd<SocketWithState>> {
         self.inner.into_poll_fd()
     }
 
@@ -200,7 +201,7 @@ impl TcpListener {
     }
 }
 
-impl_raw_fd!(TcpListener, socket2::Socket, inner, socket);
+impl_raw_fd!(TcpListener, SocketWithState, inner, socket);
 
 /// A stream of incoming TCP connections.
 pub struct TcpIncoming<'a> {
@@ -347,12 +348,12 @@ impl TcpStream {
     }
 
     /// Create [`PollFd`] from inner socket.
-    pub fn to_poll_fd(&self) -> io::Result<PollFd<Socket2>> {
+    pub fn to_poll_fd(&self) -> io::Result<PollFd<SocketWithState>> {
         self.inner.to_poll_fd()
     }
 
     /// Create [`PollFd`] from inner socket.
-    pub fn into_poll_fd(self) -> io::Result<PollFd<Socket2>> {
+    pub fn into_poll_fd(self) -> io::Result<PollFd<SocketWithState>> {
         self.inner.into_poll_fd()
     }
 
@@ -705,9 +706,9 @@ impl AsyncWriteAncillary for &TcpStream {
 }
 
 impl AsyncWriteZerocopy for TcpStream {
-    type BufferReadyFuture<T: IoBuf> = Zerocopy<SendZc<T, SharedFd<Socket2>>>;
+    type BufferReadyFuture<T: IoBuf> = Zerocopy<SendZc<T, SharedFd<SocketWithState>>>;
     type VectoredBufferReadyFuture<T: IoVectoredBuf> =
-        Zerocopy<SendVectoredZc<T, SharedFd<Socket2>>>;
+        Zerocopy<SendVectoredZc<T, SharedFd<SocketWithState>>>;
 
     async fn write_zerocopy<T: IoBuf>(
         &mut self,
@@ -725,9 +726,9 @@ impl AsyncWriteZerocopy for TcpStream {
 }
 
 impl AsyncWriteZerocopy for &TcpStream {
-    type BufferReadyFuture<T: IoBuf> = Zerocopy<SendZc<T, SharedFd<Socket2>>>;
+    type BufferReadyFuture<T: IoBuf> = Zerocopy<SendZc<T, SharedFd<SocketWithState>>>;
     type VectoredBufferReadyFuture<T: IoVectoredBuf> =
-        Zerocopy<SendVectoredZc<T, SharedFd<Socket2>>>;
+        Zerocopy<SendVectoredZc<T, SharedFd<SocketWithState>>>;
 
     async fn write_zerocopy<T: IoBuf>(
         &mut self,
@@ -746,9 +747,9 @@ impl AsyncWriteZerocopy for &TcpStream {
 
 impl AsyncWriteAncillaryZerocopy for TcpStream {
     type BufferReadyFuture<T: IoBuf, C: IoBuf> =
-        Extract<Zerocopy<SendMsgZc<[T; 1], C, SharedFd<Socket2>>>, T, C>;
+        Extract<Zerocopy<SendMsgZc<[T; 1], C, SharedFd<SocketWithState>>>, T, C>;
     type VectoredBufferReadyFuture<T: IoVectoredBuf, C: IoBuf> =
-        Zerocopy<SendMsgZc<T, C, SharedFd<Socket2>>>;
+        Zerocopy<SendMsgZc<T, C, SharedFd<SocketWithState>>>;
 
     async fn write_zerocopy_with_ancillary<T: IoBuf, C: IoBuf>(
         &mut self,
@@ -773,9 +774,9 @@ impl AsyncWriteAncillaryZerocopy for TcpStream {
 
 impl AsyncWriteAncillaryZerocopy for &TcpStream {
     type BufferReadyFuture<T: IoBuf, C: IoBuf> =
-        Extract<Zerocopy<SendMsgZc<[T; 1], C, SharedFd<Socket2>>>, T, C>;
+        Extract<Zerocopy<SendMsgZc<[T; 1], C, SharedFd<SocketWithState>>>, T, C>;
     type VectoredBufferReadyFuture<T: IoVectoredBuf, C: IoBuf> =
-        Zerocopy<SendMsgZc<T, C, SharedFd<Socket2>>>;
+        Zerocopy<SendMsgZc<T, C, SharedFd<SocketWithState>>>;
 
     async fn write_zerocopy_with_ancillary<T: IoBuf, C: IoBuf>(
         &mut self,
@@ -825,7 +826,7 @@ impl<'a> Splittable for &'a mut TcpStream {
     }
 }
 
-impl_raw_fd!(TcpStream, socket2::Socket, inner, socket);
+impl_raw_fd!(TcpStream, SocketWithState, inner, socket);
 
 /// A TCP socket that has not yet been converted to a [`TcpStream`] or
 /// [`TcpListener`].
@@ -1115,4 +1116,4 @@ impl TcpSocket {
     }
 }
 
-impl_raw_fd!(TcpSocket, socket2::Socket, inner, socket);
+impl_raw_fd!(TcpSocket, SocketWithState, inner, socket);

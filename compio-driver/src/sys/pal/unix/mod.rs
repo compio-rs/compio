@@ -12,6 +12,30 @@ use crate::sys::prelude::*;
 
 mod_use![stat, pipe, socket];
 
+/// Per-socket state needed by the asynchronous operations.
+pub trait AsSocketState: AsFd {
+    /// Whether the socket is known to be empty, so that a receive should arm
+    /// poll before its first attempt.
+    fn recv_poll_first(&self) -> bool {
+        false
+    }
+
+    /// Same as [`AsSocketState::recv_poll_first`], for accept.
+    fn accept_poll_first(&self) -> bool {
+        false
+    }
+}
+
+impl<T: AsSocketState> AsSocketState for crate::SharedFd<T> {
+    fn recv_poll_first(&self) -> bool {
+        (**self).recv_poll_first()
+    }
+
+    fn accept_poll_first(&self) -> bool {
+        (**self).accept_poll_first()
+    }
+}
+
 pub mod reexport {}
 
 /// One item in local or more items on heap.

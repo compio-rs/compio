@@ -23,9 +23,13 @@ use compio_io::{
 use compio_runtime::Runtime;
 use compio_runtime::fd::PollFd;
 use futures_util::{Stream, StreamExt, stream::FusedStream};
-use socket2::{Domain, SockAddr, Socket as Socket2, Type};
+#[cfg(unix)]
+use socket2::Socket as Socket2;
+use socket2::{Domain, SockAddr, Type};
 
-use crate::{Extract, Incoming, MSG_NOSIGNAL, ReadHalf, Socket, WriteHalf, Zerocopy};
+use crate::{
+    Extract, Incoming, MSG_NOSIGNAL, ReadHalf, Socket, SocketWithState, WriteHalf, Zerocopy,
+};
 
 /// A Unix socket server, listening for connections.
 ///
@@ -146,17 +150,17 @@ impl UnixListener {
     }
 
     /// Create [`PollFd`] from inner socket.
-    pub fn to_poll_fd(&self) -> io::Result<PollFd<Socket2>> {
+    pub fn to_poll_fd(&self) -> io::Result<PollFd<SocketWithState>> {
         self.inner.to_poll_fd()
     }
 
     /// Create [`PollFd`] from inner socket.
-    pub fn into_poll_fd(self) -> io::Result<PollFd<Socket2>> {
+    pub fn into_poll_fd(self) -> io::Result<PollFd<SocketWithState>> {
         self.inner.into_poll_fd()
     }
 }
 
-impl_raw_fd!(UnixListener, socket2::Socket, inner, socket);
+impl_raw_fd!(UnixListener, SocketWithState, inner, socket);
 
 /// A stream of incoming Unix connections.
 pub struct UnixIncoming<'a> {
@@ -301,12 +305,12 @@ impl UnixStream {
     }
 
     /// Create [`PollFd`] from inner socket.
-    pub fn to_poll_fd(&self) -> io::Result<PollFd<Socket2>> {
+    pub fn to_poll_fd(&self) -> io::Result<PollFd<SocketWithState>> {
         self.inner.to_poll_fd()
     }
 
     /// Create [`PollFd`] from inner socket.
-    pub fn into_poll_fd(self) -> io::Result<PollFd<Socket2>> {
+    pub fn into_poll_fd(self) -> io::Result<PollFd<SocketWithState>> {
         self.inner.into_poll_fd()
     }
 
@@ -513,9 +517,9 @@ impl AsyncWrite for &UnixStream {
 }
 
 impl AsyncWriteZerocopy for UnixStream {
-    type BufferReadyFuture<T: IoBuf> = Zerocopy<SendZc<T, SharedFd<Socket2>>>;
+    type BufferReadyFuture<T: IoBuf> = Zerocopy<SendZc<T, SharedFd<SocketWithState>>>;
     type VectoredBufferReadyFuture<T: IoVectoredBuf> =
-        Zerocopy<SendVectoredZc<T, SharedFd<Socket2>>>;
+        Zerocopy<SendVectoredZc<T, SharedFd<SocketWithState>>>;
 
     async fn write_zerocopy<T: IoBuf>(
         &mut self,
@@ -533,9 +537,9 @@ impl AsyncWriteZerocopy for UnixStream {
 }
 
 impl AsyncWriteZerocopy for &UnixStream {
-    type BufferReadyFuture<T: IoBuf> = Zerocopy<SendZc<T, SharedFd<Socket2>>>;
+    type BufferReadyFuture<T: IoBuf> = Zerocopy<SendZc<T, SharedFd<SocketWithState>>>;
     type VectoredBufferReadyFuture<T: IoVectoredBuf> =
-        Zerocopy<SendVectoredZc<T, SharedFd<Socket2>>>;
+        Zerocopy<SendVectoredZc<T, SharedFd<SocketWithState>>>;
 
     async fn write_zerocopy<T: IoBuf>(
         &mut self,
@@ -554,9 +558,9 @@ impl AsyncWriteZerocopy for &UnixStream {
 
 impl AsyncWriteAncillaryZerocopy for UnixStream {
     type BufferReadyFuture<T: IoBuf, C: IoBuf> =
-        Extract<Zerocopy<SendMsgZc<[T; 1], C, SharedFd<Socket2>>>, T, C>;
+        Extract<Zerocopy<SendMsgZc<[T; 1], C, SharedFd<SocketWithState>>>, T, C>;
     type VectoredBufferReadyFuture<T: IoVectoredBuf, C: IoBuf> =
-        Zerocopy<SendMsgZc<T, C, SharedFd<Socket2>>>;
+        Zerocopy<SendMsgZc<T, C, SharedFd<SocketWithState>>>;
 
     async fn write_zerocopy_with_ancillary<T: IoBuf, C: IoBuf>(
         &mut self,
@@ -581,9 +585,9 @@ impl AsyncWriteAncillaryZerocopy for UnixStream {
 
 impl AsyncWriteAncillaryZerocopy for &UnixStream {
     type BufferReadyFuture<T: IoBuf, C: IoBuf> =
-        Extract<Zerocopy<SendMsgZc<[T; 1], C, SharedFd<Socket2>>>, T, C>;
+        Extract<Zerocopy<SendMsgZc<[T; 1], C, SharedFd<SocketWithState>>>, T, C>;
     type VectoredBufferReadyFuture<T: IoVectoredBuf, C: IoBuf> =
-        Zerocopy<SendMsgZc<T, C, SharedFd<Socket2>>>;
+        Zerocopy<SendMsgZc<T, C, SharedFd<SocketWithState>>>;
 
     async fn write_zerocopy_with_ancillary<T: IoBuf, C: IoBuf>(
         &mut self,
@@ -728,7 +732,7 @@ impl<'a> Splittable for &'a mut UnixStream {
     }
 }
 
-impl_raw_fd!(UnixStream, socket2::Socket, inner, socket);
+impl_raw_fd!(UnixStream, SocketWithState, inner, socket);
 
 /// A Unix socket that has not yet been converted to a [`UnixStream`] or
 /// [`UnixListener`].
@@ -814,7 +818,7 @@ impl UnixSocket {
     }
 }
 
-impl_raw_fd!(UnixSocket, socket2::Socket, inner, socket);
+impl_raw_fd!(UnixSocket, SocketWithState, inner, socket);
 
 #[cfg(windows)]
 #[inline]

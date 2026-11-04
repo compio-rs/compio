@@ -28,12 +28,11 @@ use std::{
 
 use compio_buf::IntoInner;
 use compio_driver::AsFd;
-use compio_net::{TcpStream, UnixStream};
+use compio_net::{SocketWithState, TcpStream, UnixStream};
 use compio_runtime::fd::PollFd;
 use compio_tls::{MaybeTlsStream, TlsStream};
 use futures_util::{Sink, SinkExt, Stream, StreamExt, stream::FusedStream};
 use pin_project_lite::pin_project;
-use socket2::Socket;
 use tungstenite::{
     Error as WsError, Message,
     client::IntoClientRequest,
@@ -128,8 +127,8 @@ mod private {
     impl<S: AsFd> Sealed<S> for PollFd<S> {}
     impl<S: AsFd> Sealed<S> for MaybePollStream<S> {}
     impl<S: AsFd> Sealed<S> for TlsStream<PollFd<S>> {}
-    impl Sealed<Socket> for TcpStream {}
-    impl Sealed<Socket> for UnixStream {}
+    impl Sealed<SocketWithState> for TcpStream {}
+    impl Sealed<SocketWithState> for UnixStream {}
 }
 
 /// Convert a stream into a [`MaybeTlsStream`].
@@ -159,14 +158,14 @@ impl<S: AsFd> IntoMaybeTlsStream<S> for TlsStream<PollFd<S>> {
     }
 }
 
-impl IntoMaybeTlsStream<Socket> for TcpStream {
-    fn into_maybe_tls_stream(self) -> io::Result<MaybePollStream<Socket>> {
+impl IntoMaybeTlsStream<SocketWithState> for TcpStream {
+    fn into_maybe_tls_stream(self) -> io::Result<MaybePollStream<SocketWithState>> {
         Ok(MaybeTlsStream::new_plain(self.into_poll_fd()?))
     }
 }
 
-impl IntoMaybeTlsStream<Socket> for UnixStream {
-    fn into_maybe_tls_stream(self) -> io::Result<MaybePollStream<Socket>> {
+impl IntoMaybeTlsStream<SocketWithState> for UnixStream {
+    fn into_maybe_tls_stream(self) -> io::Result<MaybePollStream<SocketWithState>> {
         Ok(MaybeTlsStream::new_plain(self.into_poll_fd()?))
     }
 }

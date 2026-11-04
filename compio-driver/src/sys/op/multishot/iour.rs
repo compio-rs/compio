@@ -36,7 +36,7 @@ impl AcceptMultishotResult {
     }
 }
 
-unsafe impl<S: AsFd> OpCode for AcceptMulti<S> {
+unsafe impl<S: AsSocketState> OpCode for AcceptMulti<S> {
     type Control = <Accept<S> as OpCode>::Control;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {

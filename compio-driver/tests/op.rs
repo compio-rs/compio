@@ -9,10 +9,30 @@ use compio_buf::{BufResult, SetLenExt};
 #[cfg(unix)]
 use compio_driver::op::{AcceptMulti, Mode, OFlags, Pipe, ReadMulti, Write};
 use compio_driver::{
-    AsRawFd, Extra, OpCode, OwnedFd, Proactor, PushEntry, ResultTakeBuffer, SharedFd, TakeBuffer,
+    AsFd, AsRawFd, AsSocketState, BorrowedFd, Extra, OpCode, OwnedFd, Proactor, PushEntry,
+    ResultTakeBuffer, SharedFd, TakeBuffer,
     op::{Asyncify, CloseFile, CloseSocket, ReadAt, ReadManagedAt, RecvMulti},
 };
 use rustix::net::RecvFlags;
+
+/// A plain fd has no per-socket readiness state, so it is wrapped to satisfy
+/// [AsSocketState].
+#[derive(Debug)]
+struct AsyncSocket<T>(T);
+
+impl<T> AsyncSocket<T> {
+    fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T: AsFd> AsFd for AsyncSocket<T> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.0.as_fd()
+    }
+}
+
+impl<T: AsFd> AsSocketState for AsyncSocket<T> {}
 
 #[cfg(unix)]
 #[test]
@@ -338,7 +358,7 @@ fn recv_multi() {
     if driver.driver_type().is_polling() {
         stream.set_nonblocking(true).unwrap();
     }
-    let stream = SharedFd::new(stream);
+    let stream = SharedFd::new(AsyncSocket(stream));
 
     driver.attach(stream.as_raw_fd()).unwrap();
 
@@ -367,7 +387,7 @@ fn recv_multi() {
     assert_eq!(buffer, b"hello world");
 
     let stream = stream.try_unwrap().unwrap();
-    let op = CloseSocket::new(stream.into());
+    let op = CloseSocket::new(stream.into_inner().into());
     push_and_wait(&mut driver, op).unwrap();
 }
 
@@ -384,7 +404,7 @@ fn accept_multi() {
         if driver.driver_type().is_polling() {
             server.set_nonblocking(true).unwrap();
         }
-        let server = SharedFd::new(server);
+        let server = SharedFd::new(AsyncSocket(server));
 
         driver.attach(server.as_raw_fd()).unwrap();
 
@@ -462,7 +482,7 @@ fn drop_with_inflight_ops() {
     if driver.driver_type().is_polling() {
         socket.set_nonblocking(true).unwrap();
     }
-    let socket = SharedFd::new(socket);
+    let socket = SharedFd::new(AsyncSocket(socket));
     driver.attach(socket.as_raw_fd()).unwrap();
 
     let op = Recv::new(socket.clone(), Vec::with_capacity(1024), RecvFlags::empty());
@@ -509,7 +529,7 @@ fn drop_with_pending_multishot_cqes() {
         TcpStream::connect(addr).unwrap(),
         TcpStream::connect(addr).unwrap(),
     ];
-    let server = SharedFd::new(socket2::Socket::from(server));
+    let server = SharedFd::new(AsyncSocket(socket2::Socket::from(server)));
 
     let PushEntry::Pending(_key) = driver.push(AcceptMulti::new(server.clone())) else {
         panic!("a multishot accept is never ready on push")

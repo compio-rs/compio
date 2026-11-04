@@ -1,10 +1,12 @@
 use std::sync::atomic::Ordering;
 
-use compio_driver::{Extra, PollFirst};
+use compio_driver::{AsSocketState, Extra};
 #[cfg(feature = "sync")]
 use synchrony::sync::atomic::AtomicU8;
 #[cfg(not(feature = "sync"))]
 use synchrony::unsync::atomic::AtomicU8;
+
+use super::SocketWithState;
 
 const RECV_OFFSET: usize = 0;
 const ACCEPT_OFFSET: usize = 2;
@@ -49,20 +51,16 @@ impl SocketState {
             });
     }
 
-    fn set_op(&self, offset: usize, op: &mut impl PollFirst) {
-        if self.get_bit(offset) == Some(false) {
-            op.poll_first();
-        }
-    }
-
     pub(super) fn set_recv(&self, extra: &Extra) {
         if let Ok(n) = extra.sock_nonempty() {
             self.set_bit(RECV_OFFSET, n);
         }
     }
 
-    pub(super) fn set_recv_op(&self, op: &mut impl PollFirst) {
-        self.set_op(RECV_OFFSET, op);
+    /// Whether the socket is known to be empty, so that a receive should arm
+    /// poll before its first attempt.
+    pub(super) fn recv_poll_first(&self) -> bool {
+        self.get_bit(RECV_OFFSET) == Some(false)
     }
 
     pub(super) fn set_accept(&self, extra: &Extra) {
@@ -71,16 +69,18 @@ impl SocketState {
         }
     }
 
-    pub(super) fn set_accept_op(&self, op: &mut impl PollFirst) {
-        self.set_op(ACCEPT_OFFSET, op);
+    /// Same as [`SocketState::recv_poll_first`], for accept.
+    pub(super) fn accept_poll_first(&self) -> bool {
+        self.get_bit(ACCEPT_OFFSET) == Some(false)
     }
 }
 
-impl Clone for SocketState {
-    fn clone(&self) -> Self {
-        let current = self.state.load(Ordering::Relaxed);
-        Self {
-            state: AtomicU8::new(current),
-        }
+impl AsSocketState for SocketWithState {
+    fn recv_poll_first(&self) -> bool {
+        self.state.recv_poll_first()
+    }
+
+    fn accept_poll_first(&self) -> bool {
+        self.state.accept_poll_first()
     }
 }
