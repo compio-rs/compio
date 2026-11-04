@@ -122,14 +122,14 @@ macro_rules! mop {
 
 mop!(<S: AsFd> ReadManagedAt(fd: S, offset: u64, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> ReadManaged(fd: S, pool: &BufferPool, len: usize) with pool);
-mop!(<S: AsFd> RecvManaged(fd: S, pool: &BufferPool, len: usize, flags: RecvFlags) with pool);
-mop!(<S: AsFd> RecvFromManaged(fd: S, pool: &BufferPool, len: usize, flags: RecvFlags) with pool; (BufferRef, Option<SockAddr>));
-mop!(<C: IoBufMut, S: AsFd> RecvMsgManaged(fd: S, pool: &BufferPool, len: usize, control: C, flags: RecvFlags) with pool; ((BufferRef, C), Option<SockAddr>, usize, ReturnFlags));
+mop!(<S: AsSocketState> RecvManaged(fd: S, pool: &BufferPool, len: usize, flags: RecvFlags) with pool);
+mop!(<S: AsSocketState> RecvFromManaged(fd: S, pool: &BufferPool, len: usize, flags: RecvFlags) with pool; (BufferRef, Option<SockAddr>));
+mop!(<C: IoBufMut, S: AsSocketState> RecvMsgManaged(fd: S, pool: &BufferPool, len: usize, control: C, flags: RecvFlags) with pool; ((BufferRef, C), Option<SockAddr>, usize, ReturnFlags));
 mop!(<S: AsFd> ReadMultiAt(fd: S, offset: u64, pool: &BufferPool, len: usize) with pool);
 mop!(<S: AsFd> ReadMulti(fd: S, pool: &BufferPool, len: usize) with pool);
-mop!(<S: AsFd> RecvMulti(fd: S, pool: &BufferPool, len: usize, flags: RecvFlags) with pool);
-mop!(<S: AsFd> RecvFromMulti(fd: S, pool: &BufferPool, flags: RecvFlags) with pool; RecvFromMultiResult);
-mop!(<S: AsFd> RecvMsgMulti(fd: S, pool: &BufferPool, control_len: usize, flags: RecvFlags) with pool; RecvMsgMultiResult);
+mop!(<S: AsSocketState> RecvMulti(fd: S, pool: &BufferPool, len: usize, flags: RecvFlags) with pool);
+mop!(<S: AsSocketState> RecvFromMulti(fd: S, pool: &BufferPool, flags: RecvFlags) with pool; RecvFromMultiResult);
+mop!(<S: AsSocketState> RecvMsgMulti(fd: S, pool: &BufferPool, control_len: usize, flags: RecvFlags) with pool; RecvMsgMultiResult);
 
 enum RecvFromMultiResultInner {
     Poll(fallback::RecvFromMultiResult),
