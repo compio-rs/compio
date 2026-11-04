@@ -76,6 +76,7 @@ cfg_select! {
 #[derive(Debug)]
 pub struct SocketWithState {
     inner: Socket2,
+    #[allow(dead_code)]
     state: SocketState,
 }
 
@@ -201,7 +202,7 @@ impl Socket {
 
     #[cfg(unix)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
-        let mut op = Accept::new(self.to_shared_fd());
+        let op = Accept::new(self.to_shared_fd());
         let (BufResult(res, op), extra) = compio_runtime::submit(op).with_extra().await;
         res?;
         extra.update_socket_state(&*self.socket);
