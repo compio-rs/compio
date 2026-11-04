@@ -55,10 +55,12 @@ impl Extra {
     /// Update the state of `socket` from this completion.
     #[allow(unused_variables)]
     pub fn update_socket_state(&self, socket: &impl crate::AsSocketState) {
-        #[cfg(unix)]
-        {
-            socket.set_recv(self);
-            socket.set_accept(self);
+        cfg_select! {
+            unix => {
+                socket.set_recv(self);
+                socket.set_accept(self);
+            }
+            _ => {}
         }
     }
 }
