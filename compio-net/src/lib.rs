@@ -28,6 +28,7 @@ pub type PollFd<T> = compio_runtime::fd::PollFd<T>;
 pub(crate) use incoming::*;
 pub use resolve::ToSocketAddrsAsync;
 pub(crate) use resolve::{each_addr, first_addr_buf, first_addr_buf_zerocopy};
+pub use socket::SocketWithState;
 pub(crate) use socket::*;
 pub use split::*;
 pub use tcp::*;

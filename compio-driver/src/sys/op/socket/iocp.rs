@@ -1,18 +1,13 @@
 use windows_sys::Win32::{
     Networking::WinSock::{
-        LPFN_ACCEPTEX, LPFN_CONNECTEX, LPFN_DISCONNECTEX, LPFN_GETACCEPTEXSOCKADDRS,
-        LPFN_WSARECVMSG, SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, SOCKADDR,
-        SOCKADDR_STORAGE, SOL_SOCKET, TF_REUSE_SOCKET, WSAID_ACCEPTEX, WSAID_CONNECTEX,
-        WSAID_DISCONNECTEX, WSAID_GETACCEPTEXSOCKADDRS, WSAID_WSARECVMSG, WSAMSG, WSARecv,
-        WSARecvFrom, WSASend, WSASendMsg, WSASendTo, closesocket, setsockopt, socklen_t,
+        SO_UPDATE_ACCEPT_CONTEXT, SO_UPDATE_CONNECT_CONTEXT, SOCKADDR, SOCKADDR_STORAGE,
+        SOL_SOCKET, TF_REUSE_SOCKET, WSAMSG, WSARecv, WSARecvFrom, WSASend, WSASendMsg, WSASendTo,
+        closesocket, setsockopt, socklen_t,
     },
     System::IO::OVERLAPPED,
 };
 
-use crate::{OpCode, OpType, sys::op::*};
-
-static ACCEPT_EX: OnceLock<LPFN_ACCEPTEX> = OnceLock::new();
-static GET_ADDRS: OnceLock<LPFN_GETACCEPTEXSOCKADDRS> = OnceLock::new();
+use crate::{AsSocketState, OpCode, OpType, sys::op::*};
 
 const ACCEPT_ADDR_BUFFER_SIZE: usize = std::mem::size_of::<SOCKADDR_STORAGE>() + 16;
 const ACCEPT_BUFFER_SIZE: usize = ACCEPT_ADDR_BUFFER_SIZE * 2;
@@ -49,7 +44,7 @@ impl<S, SA> Accept<S, SA> {
     }
 }
 
-impl<S: AsFd, SA: AsFd> Accept<S, SA> {
+impl<S: AsSocketState, SA: AsFd> Accept<S, SA> {
     /// Update accept context.
     pub fn update_context(&self) -> io::Result<()> {
         let fd = self.fd.as_fd().as_raw_fd();
@@ -68,23 +63,13 @@ impl<S: AsFd, SA: AsFd> Accept<S, SA> {
 
     /// Get the remote address from the inner buffer.
     pub fn into_addr(self) -> io::Result<(SA, SockAddr)> {
-        let get_addrs_fn = GET_ADDRS
-            .get_or_try_init(|| {
-                get_wsa_fn(self.fd.as_fd().as_raw_fd(), WSAID_GETACCEPTEXSOCKADDRS)
-            })?
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::Unsupported,
-                    "cannot retrieve GetAcceptExSockAddrs",
-                )
-            })?;
         let mut local_addr: *mut SOCKADDR = null_mut();
         let mut local_addr_len = 0;
         let mut remote_addr: *mut SOCKADDR = null_mut();
         let mut remote_addr_len = 0;
         unsafe {
-            get_addrs_fn(
-                &self.buffer as *const _ as *const _,
+            self.fd.wsa_get_accept_ex_sockaddrs(
+                self.buffer.as_ptr().cast(),
                 0,
                 ACCEPT_ADDR_BUFFER_SIZE as _,
                 ACCEPT_ADDR_BUFFER_SIZE as _,
@@ -92,7 +77,7 @@ impl<S: AsFd, SA: AsFd> Accept<S, SA> {
                 &mut local_addr_len,
                 &mut remote_addr,
                 &mut remote_addr_len,
-            );
+            )?;
         }
         Ok((self.accept_fd, unsafe {
             SockAddr::new(
@@ -106,29 +91,22 @@ impl<S: AsFd, SA: AsFd> Accept<S, SA> {
     }
 }
 
-unsafe impl<S: AsFd, SA: AsFd> OpCode for Accept<S, SA> {
+unsafe impl<S: AsSocketState, SA: AsFd> OpCode for Accept<S, SA> {
     type Control = ();
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let accept_fn = ACCEPT_EX
-            .get_or_try_init(|| get_wsa_fn(self.fd.as_fd().as_raw_fd(), WSAID_ACCEPTEX))?
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve AcceptEx")
-            })?;
         let mut received = 0;
-        let res = unsafe {
-            accept_fn(
-                self.fd.as_fd().as_raw_fd() as _,
+        unsafe {
+            self.fd.wsa_accept_ex(
                 self.accept_fd.as_fd().as_raw_fd() as _,
-                self.buffer.sys_slice_mut().ptr() as _,
+                self.buffer.as_mut_ptr().cast(),
                 0,
                 ACCEPT_ADDR_BUFFER_SIZE as _,
                 ACCEPT_ADDR_BUFFER_SIZE as _,
-                &mut received,
+                &raw mut received,
                 optr,
             )
-        };
-        win32_result(res, received)
+        }
     }
 
     fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
@@ -136,9 +114,7 @@ unsafe impl<S: AsFd, SA: AsFd> OpCode for Accept<S, SA> {
     }
 }
 
-static CONNECT_EX: OnceLock<LPFN_CONNECTEX> = OnceLock::new();
-
-impl<S: AsFd> Connect<S> {
+impl<S: AsSocketState> Connect<S> {
     /// Update connect context.
     pub fn update_context(&self) -> io::Result<()> {
         syscall!(
@@ -155,28 +131,21 @@ impl<S: AsFd> Connect<S> {
     }
 }
 
-unsafe impl<S: AsFd> OpCode for Connect<S> {
+unsafe impl<S: AsSocketState> OpCode for Connect<S> {
     type Control = ();
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let connect_fn = CONNECT_EX
-            .get_or_try_init(|| get_wsa_fn(self.fd.as_fd().as_raw_fd(), WSAID_CONNECTEX))?
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve ConnectEx")
-            })?;
         let mut sent = 0;
-        let res = unsafe {
-            connect_fn(
-                self.fd.as_fd().as_raw_fd() as _,
+        unsafe {
+            self.fd.wsa_connect_ex(
                 self.addr.as_ptr().cast(),
                 self.addr.len(),
                 null(),
                 0,
-                &mut sent,
+                &raw mut sent,
                 optr,
             )
-        };
-        win32_result(res, sent)
+        }
     }
 
     fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
@@ -196,20 +165,11 @@ impl<S> Disconnect<S> {
     }
 }
 
-static DISCONNECT_EX: OnceLock<LPFN_DISCONNECTEX> = OnceLock::new();
-
-unsafe impl<S: AsFd> OpCode for Disconnect<S> {
+unsafe impl<S: AsSocketState> OpCode for Disconnect<S> {
     type Control = ();
 
     unsafe fn operate(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> Poll<io::Result<usize>> {
-        let disconnect_fn = DISCONNECT_EX
-            .get_or_try_init(|| get_wsa_fn(self.fd.as_fd().as_raw_fd(), WSAID_DISCONNECTEX))?
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve DisconnectEx")
-            })?;
-        let res =
-            unsafe { disconnect_fn(self.fd.as_fd().as_raw_fd() as _, optr, TF_REUSE_SOCKET, 0) };
-        win32_result(res, 0)
+        unsafe { self.fd.wsa_disconnect_ex(optr, TF_REUSE_SOCKET, 0) }
     }
 
     fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
@@ -537,8 +497,6 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     }
 }
 
-static WSA_RECVMSG: OnceLock<LPFN_WSARECVMSG> = OnceLock::new();
-
 #[derive(Default)]
 #[doc(hidden)]
 pub struct RecvMsgControl {
@@ -547,7 +505,7 @@ pub struct RecvMsgControl {
     slices: Vec<SysSlice>,
 }
 
-unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
+unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsSocketState> OpCode for RecvMsg<T, C, S> {
     type Control = RecvMsgControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
@@ -565,23 +523,12 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
         control: &mut RecvMsgControl,
         optr: *mut OVERLAPPED,
     ) -> Poll<io::Result<usize>> {
-        let recvmsg_fn = WSA_RECVMSG
-            .get_or_try_init(|| get_wsa_fn(self.header.fd.as_fd().as_raw_fd(), WSAID_WSARECVMSG))?
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::Unsupported, "cannot retrieve WSARecvMsg")
-            })?;
-
         let mut received = 0;
-        let res = unsafe {
-            recvmsg_fn(
-                self.header.fd.as_fd().as_raw_fd() as _,
-                &raw mut control.msg,
-                &mut received,
-                optr,
-                None,
-            )
-        };
-        winsock_result(res, received)
+        unsafe {
+            self.header
+                .fd
+                .wsa_recv_msg(&raw mut control.msg, &raw mut received, optr, None)
+        }
     }
 
     fn cancel(&mut self, _: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {

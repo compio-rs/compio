@@ -12,7 +12,7 @@ use rustix::net::{RecvFlags, ReturnFlags};
 use socket2::{SockAddr, SockAddrStorage, socklen_t};
 
 use crate::{
-    BufferPool, BufferRef, Extra, IourOpCode as OpCode, OpEntry, PollFirst,
+    AsSocketState, BufferPool, BufferRef, Extra, IourOpCode as OpCode, OpEntry,
     op::TakeBuffer,
     sys::pal::{is_kernel_at_least, set_poll_first},
 };
@@ -144,7 +144,6 @@ pub struct RecvManaged<S> {
     buffer_group: u16,
     buffer_pool: BufferPool,
     buffer: Option<BufferRef>,
-    poll_first: bool,
 }
 
 impl<S> RecvManaged<S> {
@@ -159,18 +158,11 @@ impl<S> RecvManaged<S> {
             flags,
             buffer_pool: buffer_pool.clone(),
             buffer: None,
-            poll_first: false,
         })
     }
 }
 
-impl<S> PollFirst for RecvManaged<S> {
-    fn poll_first(&mut self) {
-        self.poll_first = true;
-    }
-}
-
-unsafe impl<S: AsFd> OpCode for RecvManaged<S> {
+unsafe impl<S: AsSocketState> OpCode for RecvManaged<S> {
     type Control = ();
 
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
@@ -180,7 +172,7 @@ unsafe impl<S: AsFd> OpCode for RecvManaged<S> {
             .buf_group(self.buffer_group)
             .build()
             .flags(Flags::BUFFER_SELECT);
-        let entry = set_poll_first(entry, self.poll_first);
+        let entry = set_poll_first(entry, self.fd.recv_poll_first());
         entry.into()
     }
 
@@ -215,7 +207,6 @@ pub struct RecvFromManaged<S> {
     buffer_group: u16,
     buffer_pool: BufferPool,
     buffer: Option<BufferRef>,
-    poll_first: bool,
 }
 
 #[doc(hidden)]
@@ -247,14 +238,7 @@ impl<S> RecvFromManaged<S> {
             addr,
             buffer_pool: buffer_pool.clone(),
             buffer: None,
-            poll_first: false,
         })
-    }
-}
-
-impl<S> PollFirst for RecvFromManaged<S> {
-    fn poll_first(&mut self) {
-        self.poll_first = true;
     }
 }
 
@@ -268,7 +252,7 @@ impl<S> TakeBuffer for RecvFromManaged<S> {
     }
 }
 
-unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
+unsafe impl<S: AsSocketState> OpCode for RecvFromManaged<S> {
     type Control = RecvFromManagedControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
@@ -285,7 +269,7 @@ unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
             .buf_group(self.buffer_group)
             .build()
             .flags(Flags::BUFFER_SELECT);
-        let entry = set_poll_first(entry, self.poll_first);
+        let entry = set_poll_first(entry, self.fd.recv_poll_first());
         entry.into()
     }
 
@@ -334,13 +318,7 @@ impl<C: IoBufMut, S: AsFd> RecvMsgManaged<C, S> {
     }
 }
 
-impl<C: IoBufMut, S: AsFd> PollFirst for RecvMsgManaged<C, S> {
-    fn poll_first(&mut self) {
-        self.op.poll_first();
-    }
-}
-
-unsafe impl<C: IoBufMut, S: AsFd> OpCode for RecvMsgManaged<C, S> {
+unsafe impl<C: IoBufMut, S: AsSocketState> OpCode for RecvMsgManaged<C, S> {
     type Control = RecvFromManagedControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
@@ -580,7 +558,7 @@ impl<S> RecvMulti<S> {
     }
 }
 
-unsafe impl<S: AsFd> OpCode for RecvMulti<S> {
+unsafe impl<S: AsSocketState> OpCode for RecvMulti<S> {
     type Control = ();
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -885,7 +863,7 @@ impl<S: AsFd> TakeBuffer for RecvMsgMultiFallback<S> {
     }
 }
 
-unsafe impl<S: AsFd> OpCode for RecvMsgMultiFallback<S> {
+unsafe impl<S: AsSocketState> OpCode for RecvMsgMultiFallback<S> {
     type Control = RecvFromManagedControl;
 
     unsafe fn init(&mut self, control: &mut Self::Control) {
@@ -1044,7 +1022,7 @@ impl<S: AsFd> TakeBuffer for RecvMsgMulti<S> {
     }
 }
 
-unsafe impl<S: AsFd> OpCode for RecvMsgMulti<S> {
+unsafe impl<S: AsSocketState> OpCode for RecvMsgMulti<S> {
     type Control = RecvFromManagedControl;
 
     unsafe fn init(&mut self, control: &mut Self::Control) {
@@ -1152,7 +1130,7 @@ impl<S: AsFd> RecvFromMulti<S> {
     }
 }
 
-unsafe impl<S: AsFd> OpCode for RecvFromMulti<S> {
+unsafe impl<S: AsSocketState> OpCode for RecvFromMulti<S> {
     type Control = RecvFromManagedControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {

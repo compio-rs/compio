@@ -2,6 +2,7 @@ use std::{
     future::Future,
     io,
     mem::{ManuallyDrop, MaybeUninit},
+    ops::Deref,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -57,6 +58,10 @@ cfg_select! {
 }
 
 cfg_select! {
+    windows => {
+        #[path = "windows.rs"]
+        mod sys;
+    }
     target_os = "linux" => {
         #[path = "linux.rs"]
         mod sys;
@@ -67,17 +72,56 @@ cfg_select! {
     }
 }
 
+/// A socket handle together with the state that belongs to it.
+#[derive(Debug)]
+pub struct SocketWithState {
+    inner: Socket2,
+    #[allow(dead_code)]
+    state: SocketState,
+}
+
+impl SocketWithState {
+    fn new(inner: Socket2) -> Self {
+        Self {
+            inner,
+            state: SocketState::new(),
+        }
+    }
+
+    fn into_inner(self) -> Socket2 {
+        self.inner
+    }
+}
+
+impl Deref for SocketWithState {
+    type Target = Socket2;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl AsRawFd for SocketWithState {
+    fn as_raw_fd(&self) -> RawFd {
+        self.inner.as_raw_fd()
+    }
+}
+
+impl AsFd for SocketWithState {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.inner.as_fd()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Socket {
-    pub(crate) socket: Attacher<Socket2>,
-    state: SocketState,
+    pub(crate) socket: Attacher<SocketWithState>,
 }
 
 impl Socket {
     pub fn from_socket2(socket: Socket2) -> io::Result<Self> {
         Ok(Self {
-            socket: Attacher::new(socket)?,
-            state: SocketState::new(),
+            socket: Attacher::new(SocketWithState::new(socket))?,
         })
     }
 
@@ -89,11 +133,11 @@ impl Socket {
         self.socket.local_addr()
     }
 
-    pub fn to_poll_fd(&self) -> io::Result<PollFd<Socket2>> {
+    pub fn to_poll_fd(&self) -> io::Result<PollFd<SocketWithState>> {
         PollFd::from_shared_fd(self.to_shared_fd())
     }
 
-    pub fn into_poll_fd(self) -> io::Result<PollFd<Socket2>> {
+    pub fn into_poll_fd(self) -> io::Result<PollFd<SocketWithState>> {
         PollFd::from_shared_fd(self.socket.into_inner())
     }
 
@@ -158,11 +202,10 @@ impl Socket {
 
     #[cfg(unix)]
     pub async fn accept(&self) -> io::Result<(Self, SockAddr)> {
-        let mut op = Accept::new(self.to_shared_fd());
-        self.state.set_accept_op(&mut op);
+        let op = Accept::new(self.to_shared_fd());
         let (BufResult(res, op), extra) = compio_runtime::submit(op).with_extra().await;
         res?;
-        self.state.set_accept(&extra);
+        extra.update_socket_state(&*self.socket);
         let (accept_sock, addr) = op.into_inner();
         let accept_sock = Self::from_socket2(accept_sock)?;
         Ok((accept_sock, addr))
@@ -202,7 +245,7 @@ impl Socket {
                 .take()
                 .await;
             if let Some(fd) = fd {
-                let op = CloseSocket::new(fd.into());
+                let op = CloseSocket::new(fd.into_inner().into());
                 compio_runtime::submit(op).await.0?;
             }
             Ok(())
@@ -231,10 +274,9 @@ impl Socket {
 
     pub async fn recv<B: IoBufMut>(&self, buffer: B, flags: RecvFlags) -> BufResult<usize, B> {
         let fd = self.to_shared_fd();
-        let mut op = Recv::new(fd, buffer, flags);
-        self.state.set_recv_op(&mut op);
+        let op = Recv::new(fd, buffer, flags);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
-        self.state.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
         let res = res.into_inner();
         unsafe { res.map_advanced() }
     }
@@ -245,10 +287,9 @@ impl Socket {
         flags: RecvFlags,
     ) -> BufResult<usize, V> {
         let fd = self.to_shared_fd();
-        let mut op = RecvVectored::new(fd, buffer, flags);
-        self.state.set_recv_op(&mut op);
+        let op = RecvVectored::new(fd, buffer, flags);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
-        self.state.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
         let res = res.into_inner();
         unsafe { res.map_vec_advanced() }
     }
@@ -261,13 +302,12 @@ impl Socket {
         let fd = self.to_shared_fd();
         let (res, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
-            let mut op = RecvManaged::new(fd, &buffer_pool, len, flags)?;
-            self.state.set_recv_op(&mut op);
+            let op = RecvManaged::new(fd, &buffer_pool, len, flags)?;
             io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;
 
-        self.state.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
 
         unsafe { res.take_buffer() }
     }
@@ -306,7 +346,7 @@ impl Socket {
         &self,
         buf: T,
         flags: SendFlags,
-    ) -> BufResult<usize, Zerocopy<SendZc<T, SharedFd<Socket2>>>> {
+    ) -> BufResult<usize, Zerocopy<SendZc<T, SharedFd<SocketWithState>>>> {
         submit_zerocopy(SendZc::new(self.to_shared_fd(), buf, flags)).await
     }
 
@@ -314,7 +354,7 @@ impl Socket {
         &self,
         buf: T,
         flags: SendFlags,
-    ) -> BufResult<usize, Zerocopy<SendVectoredZc<T, SharedFd<Socket2>>>> {
+    ) -> BufResult<usize, Zerocopy<SendVectoredZc<T, SharedFd<SocketWithState>>>> {
         submit_zerocopy(SendVectoredZc::new(self.to_shared_fd(), buf, flags)).await
     }
 
@@ -324,10 +364,9 @@ impl Socket {
         flags: RecvFlags,
     ) -> BufResult<(usize, Option<SockAddr>), T> {
         let fd = self.to_shared_fd();
-        let mut op = RecvFrom::new(fd, buffer, flags);
-        self.state.set_recv_op(&mut op);
+        let op = RecvFrom::new(fd, buffer, flags);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
-        self.state.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
         let res = res.into_inner().map_addr();
         unsafe { res.map_advanced() }
     }
@@ -338,10 +377,9 @@ impl Socket {
         flags: RecvFlags,
     ) -> BufResult<(usize, Option<SockAddr>), T> {
         let fd = self.to_shared_fd();
-        let mut op = RecvFromVectored::new(fd, buffer, flags);
-        self.state.set_recv_op(&mut op);
+        let op = RecvFromVectored::new(fd, buffer, flags);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
-        self.state.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
         let res = res.into_inner().map_addr();
         unsafe { res.map_vec_advanced() }
     }
@@ -354,12 +392,11 @@ impl Socket {
         let fd = self.to_shared_fd();
         let (inner, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
-            let mut op = RecvFromManaged::new(fd, &buffer_pool, len, flags)?;
-            self.state.set_recv_op(&mut op);
+            let op = RecvFromManaged::new(fd, &buffer_pool, len, flags)?;
             io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;
-        self.state.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
         let (len, op) = buf_try!(@try inner);
         // Kernel returns 0 for the operation, drop the buffer and return
         // Ok(None)
@@ -407,10 +444,9 @@ impl Socket {
         flags: RecvFlags,
     ) -> BufResult<(usize, usize, Option<SockAddr>, ReturnFlags), (T, C)> {
         let fd = self.to_shared_fd();
-        let mut op = RecvMsg::new(fd, buffer, control, flags);
-        self.state.set_recv_op(&mut op);
+        let op = RecvMsg::new(fd, buffer, control, flags);
         let (res, extra) = compio_runtime::submit(op).with_extra().await;
-        self.state.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
         let res = res.into_inner().map_addr();
         unsafe { res.map_vec_advanced() }
     }
@@ -424,12 +460,11 @@ impl Socket {
         let fd = self.to_shared_fd();
         let (inner, extra) = Runtime::with_current(|rt| {
             let buffer_pool = rt.buffer_pool()?;
-            let mut op = RecvMsgManaged::new(fd, &buffer_pool, len, control, flags)?;
-            self.state.set_recv_op(&mut op);
+            let op = RecvMsgManaged::new(fd, &buffer_pool, len, control, flags)?;
             io::Result::Ok(rt.submit(op).with_extra())
         })?
         .await;
-        self.state.set_recv(&extra);
+        extra.update_socket_state(&*self.socket);
         let (len, op) = buf_try!(@try inner);
         // Kernel returns 0 for the operation, drop the buffer and return
         // Ok(None)
@@ -491,7 +526,7 @@ impl Socket {
         buffer: T,
         addr: &SockAddr,
         flags: SendFlags,
-    ) -> BufResult<usize, Zerocopy<SendToZc<T, SharedFd<Socket2>>>> {
+    ) -> BufResult<usize, Zerocopy<SendToZc<T, SharedFd<SocketWithState>>>> {
         let op = SendToZc::new(self.to_shared_fd(), buffer, addr.clone(), flags);
         submit_zerocopy(op).await
     }
@@ -501,7 +536,7 @@ impl Socket {
         buffer: T,
         addr: &SockAddr,
         flags: SendFlags,
-    ) -> BufResult<usize, Zerocopy<SendToVectoredZc<T, SharedFd<Socket2>>>> {
+    ) -> BufResult<usize, Zerocopy<SendToVectoredZc<T, SharedFd<SocketWithState>>>> {
         let op = SendToVectoredZc::new(self.to_shared_fd(), buffer, addr.clone(), flags);
         submit_zerocopy(op).await
     }
@@ -536,7 +571,8 @@ impl Socket {
         control: C,
         addr: Option<&SockAddr>,
         flags: SendFlags,
-    ) -> BufResult<usize, Extract<Zerocopy<SendMsgZc<[T; 1], C, SharedFd<Socket2>>>, T, C>> {
+    ) -> BufResult<usize, Extract<Zerocopy<SendMsgZc<[T; 1], C, SharedFd<SocketWithState>>>, T, C>>
+    {
         let BufResult(res, fut) = self
             .send_msg_zerocopy_vectored([buffer], control, addr, flags)
             .await;
@@ -550,7 +586,7 @@ impl Socket {
         control: C,
         addr: Option<&SockAddr>,
         flags: SendFlags,
-    ) -> BufResult<usize, Zerocopy<SendMsgZc<T, C, SharedFd<Socket2>>>> {
+    ) -> BufResult<usize, Zerocopy<SendMsgZc<T, C, SharedFd<SocketWithState>>>> {
         let fd = self.to_shared_fd();
         let op = SendMsgZc::new(fd, buffer, control, addr.cloned(), flags);
         submit_zerocopy(op).await
@@ -646,17 +682,30 @@ impl AsFd for Socket {
 }
 
 #[cfg(unix)]
+impl std::os::fd::FromRawFd for SocketWithState {
+    unsafe fn from_raw_fd(fd: RawFd) -> Self {
+        Self::new(unsafe { std::os::fd::FromRawFd::from_raw_fd(fd) })
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::FromRawSocket for SocketWithState {
+    unsafe fn from_raw_socket(sock: std::os::windows::io::RawSocket) -> Self {
+        Self::new(unsafe { std::os::windows::io::FromRawSocket::from_raw_socket(sock) })
+    }
+}
+
+#[cfg(unix)]
 impl std::os::fd::FromRawFd for Socket {
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         Self {
             socket: unsafe { std::os::fd::FromRawFd::from_raw_fd(fd) },
-            state: SocketState::new(),
         }
     }
 }
 
-impl compio_driver::ToSharedFd<Socket2> for Socket {
-    fn to_shared_fd(&self) -> compio_driver::SharedFd<Socket2> {
+impl compio_driver::ToSharedFd<SocketWithState> for Socket {
+    fn to_shared_fd(&self) -> compio_driver::SharedFd<SocketWithState> {
         self.socket.to_shared_fd()
     }
 }
@@ -666,7 +715,6 @@ impl std::os::windows::io::FromRawSocket for Socket {
     unsafe fn from_raw_socket(sock: std::os::windows::io::RawSocket) -> Self {
         Self {
             socket: unsafe { std::os::windows::io::FromRawSocket::from_raw_socket(sock) },
-            state: SocketState::new(),
         }
     }
 }

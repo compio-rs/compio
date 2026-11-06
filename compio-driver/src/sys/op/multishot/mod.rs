@@ -6,7 +6,7 @@ cfg_select! {
         mod iour;
         mod poll;
 
-        crate::macros::fuse_op!(<S: AsFd> AcceptMulti(fd: S));
+        crate::macros::fuse_op!(<S: AsSocketState> AcceptMulti(fd: S));
     }
     io_uring => {
         mod_use![iour];

@@ -51,6 +51,18 @@ impl Extra {
     pub(crate) fn new(driver: &Driver) -> Self {
         driver.default_extra().into()
     }
+
+    /// Update the state of `socket` from this completion.
+    #[allow(unused_variables)]
+    pub fn update_socket_state(&self, socket: &impl crate::AsSocketState) {
+        cfg_select! {
+            unix => {
+                socket.set_recv(self);
+                socket.set_accept(self);
+            }
+            _ => {}
+        }
+    }
 }
 
 impl Extra {
