@@ -3,12 +3,13 @@ use std::{
     marker::PhantomData,
     os::windows::io::AsRawHandle,
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use flume::{Receiver, Sender};
 use windows_sys::Win32::{Foundation::ERROR_OPERATION_ABORTED, System::IO::OVERLAPPED};
 
+use super::CancelOnDrop;
 use crate::{
     AsyncifyPool, DriverType, Entry, ErasedKey, ProactorBuilder,
     control::Carrier,
@@ -40,6 +41,7 @@ pub(crate) struct Driver {
     waits: HashMap<usize, wait::Wait>,
     /// The operations the I/O manager is currently executing.
     in_flight: HashSet<*mut Overlapped>,
+    drop_timeout: Duration,
     pool: AsyncifyPool,
     completed_tx: Sender<Entry>,
     completed_rx: Receiver<Entry>,
@@ -62,6 +64,7 @@ impl Driver {
             completed_rx,
             waits: HashMap::default(),
             in_flight: HashSet::default(),
+            drop_timeout: builder.drop_timeout,
             pool: builder.create_or_get_thread_pool(),
             _local_marker: PhantomData,
         })
@@ -240,18 +243,9 @@ impl Driver {
     pub fn pop_multishot(&mut self, _: &ErasedKey) -> Option<BufResult<usize, crate::sys::Extra>> {
         None
     }
-}
 
-impl AsRawFd for Driver {
-    fn as_raw_fd(&self) -> RawFd {
-        self.port().as_raw_handle() as _
-    }
-}
-
-impl Drop for Driver {
-    fn drop(&mut self) {
-        const DROP_TIMEOUT: Duration = Duration::from_secs(1);
-
+    /// Ask the I/O manager to cancel every operation still in flight.
+    fn cancel_in_flight(&mut self) {
         for &optr in &self.in_flight {
             // SAFETY: `push` leaked the key and it is still in flight.
             let key = unsafe { BorrowedKey::from_optr(optr) };
@@ -260,46 +254,65 @@ impl Drop for Driver {
                 trace!("failed to cancel in-flight op on drop: {e:?}");
             }
         }
+    }
 
-        let deadline = Instant::now() + DROP_TIMEOUT;
+    /// Poll the completion port and release the operations that finished.
+    ///
+    /// `TimedOut` is not an error here: it only means that no operation
+    /// completed within `timeout`.
+    fn drain_for_drop(&mut self, timeout: Duration) -> io::Result<()> {
         let notify = &self.notify.overlapped as *const Overlapped;
 
-        while !self.in_flight.is_empty() {
-            let now = Instant::now();
-            if now >= deadline {
-                break;
+        let entries = self.notify.port.poll(Some(timeout))?;
+
+        for entry in entries {
+            let optr = entry.overlapped;
+            if optr.cast_const() == notify {
+                continue;
             }
-            let timeout = (deadline - now).max(Duration::from_millis(1));
 
-            let entries = match self.notify.port.poll(Some(timeout)) {
-                Ok(entries) => entries,
-                Err(e) => {
-                    warn!("failed to poll IOCP while dropping the driver: {e:?}");
-                    break;
-                }
-            };
-
-            for entry in entries {
-                let optr = entry.overlapped;
-                if optr.cast_const() == notify {
-                    continue;
-                }
-
-                if self.in_flight.remove(&optr) {
-                    drop(unsafe { ErasedKey::from_optr(optr) });
-                } else {
-                    trace!("ignore untracked completion while dropping the driver");
-                }
+            if self.in_flight.remove(&optr) {
+                drop(unsafe { ErasedKey::from_optr(optr) });
+            } else {
+                trace!("ignore untracked completion while dropping the driver");
             }
         }
 
-        if !self.in_flight.is_empty() {
-            warn!(
-                "leaking {} in-flight IOCP op(s) on driver drop; the I/O manager did not finish \
-                 cancelling them within {DROP_TIMEOUT:?}",
-                self.in_flight.len()
-            );
+        Ok(())
+    }
+}
+
+impl AsRawFd for Driver {
+    fn as_raw_fd(&self) -> RawFd {
+        self.port().as_raw_handle() as _
+    }
+}
+
+impl CancelOnDrop for Driver {
+    const KIND: &'static str = "IOCP";
+
+    fn reap_pending(&mut self) -> usize {
+        if let Err(e) = self.drain_for_drop(Duration::ZERO) {
+            warn!("failed to poll IOCP while dropping the driver: {e:?}");
         }
+        self.in_flight.len()
+    }
+
+    fn cancel_pending(&mut self) {
+        self.cancel_in_flight();
+    }
+
+    fn wait_pending(&mut self, timeout: Duration) -> io::Result<()> {
+        // `CompletionPort::poll` truncates the timeout to milliseconds. Round a
+        // sub-millisecond remainder up so that the call actually waits.
+        self.drain_for_drop(timeout.max(Duration::from_millis(1)))
+    }
+}
+
+impl Drop for Driver {
+    fn drop(&mut self) {
+        let timeout = self.drop_timeout;
+        self.shutdown(timeout);
 
         let mut leaked = 0;
         for (key, w) in std::mem::take(&mut self.waits) {

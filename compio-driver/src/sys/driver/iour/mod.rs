@@ -1,10 +1,6 @@
-use std::{
-    marker::PhantomData,
-    panic::AssertUnwindSafe,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{marker::PhantomData, panic::AssertUnwindSafe, sync::Arc, time::Duration};
 
+use super::CancelOnDrop;
 use crate::sys::{extra::IourExtra, prelude::*};
 
 mod_use![op, notify];
@@ -68,6 +64,7 @@ pub(crate) struct Driver {
     completed_tx: Sender<Entry>,
     completed_rx: Receiver<Entry>,
     flags: DriverFlags,
+    drop_timeout: Duration,
     /// Keys leaked via `into_raw()` into io_uring user_data.
     in_flight: SlotMap<DefaultKey, usize>,
     _p: PhantomData<ErasedKey>,
@@ -149,6 +146,7 @@ impl Driver {
             completed_rx,
             pool: builder.create_or_get_thread_pool(),
             flags,
+            drop_timeout: builder.drop_timeout,
             in_flight: SlotMap::new(),
             _p: PhantomData,
         })
@@ -327,13 +325,10 @@ impl Driver {
                         }
                     } else {
                         let entry = create_entry(entry);
-                        let owned = Self::remove_in_flight(&mut self.in_flight, &entry.key);
+                        let owned = Self::remove_in_flight(&mut self.in_flight, &entry.key, mode);
                         match mode {
                             CompletionMode::Poll => entry.notify(),
-                            CompletionMode::Drop => {
-                                assert!(owned, "terminal CQE for an op not in flight");
-                                drop(entry.into_key())
-                            }
+                            CompletionMode::Drop => Self::release_on_drop(entry, owned),
                         }
                     }
                 }
@@ -382,38 +377,41 @@ impl Driver {
         Ok(())
     }
 
-    fn push_raw(&mut self, entry: SEntry) -> io::Result<()> {
+    fn push_entry(&mut self, entry: &SEntry) -> io::Result<bool> {
+        let mut flushed = false;
         loop {
             let mut squeue = self.inner.submission();
-            match unsafe { squeue.push(&entry) } {
-                Ok(()) => {
-                    squeue.sync();
-                    break Ok(());
-                }
-                Err(_) => {
-                    drop(squeue);
-                    match self.submit_auto(Some(Duration::ZERO), true) {
-                        Ok(()) => {}
-                        Err(e)
-                            if matches!(
-                                e.kind(),
-                                io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
-                            ) => {}
-                        Err(e) => return Err(e),
-                    }
-                    // If the CQEs are consumed here, we should make the driver
-                    // aware of it. We should not mask
-                    // `awake` here, otherwise the driver may wait for the next
-                    // event indefinitely.
-                    //
-                    // Anyway it is not a hot path, so we can afford an extra
-                    // `write` syscall here.
-                    if self.poll_entries() {
-                        self.notifier.waker().wake();
-                    }
-                }
+            if unsafe { squeue.push(entry) }.is_ok() {
+                squeue.sync();
+                return Ok(flushed);
+            }
+            drop(squeue);
+            match self.submit_auto(Some(Duration::ZERO), true) {
+                Ok(()) => {}
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
+                    ) => {}
+                Err(e) => return Err(e),
+            }
+            flushed = true;
+        }
+    }
+
+    fn push_raw(&mut self, entry: SEntry) -> io::Result<()> {
+        if self.push_entry(&entry)? {
+            // If the CQEs are consumed here, we should make the driver aware of
+            // it. We should not mask `awake` here, otherwise the driver may
+            // wait for the next event indefinitely.
+            //
+            // Anyway it is not a hot path, so we can afford an extra `write`
+            // syscall here.
+            if self.poll_entries() {
+                self.notifier.waker().wake();
             }
         }
+        Ok(())
     }
 
     pub fn push(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
@@ -525,13 +523,31 @@ impl Driver {
     /// extra, and is only set while the op is in flight.
     ///
     /// Returns whether the driver still owned the leaked key reference.
-    fn remove_in_flight(in_flight: &mut SlotMap<DefaultKey, usize>, key: &ErasedKey) -> bool {
+    fn remove_in_flight(
+        in_flight: &mut SlotMap<DefaultKey, usize>,
+        key: &ErasedKey,
+        mode: CompletionMode,
+    ) -> bool {
         let Some(slot) = key.borrow().extra_mut().as_iour_mut().take_in_flight() else {
             return false;
         };
         let removed = in_flight.remove(slot);
-        debug_assert_eq!(removed, Some(key.as_raw()));
+        debug_assert!(
+            mode == CompletionMode::Drop || removed == Some(key.as_raw()),
+            "in-flight slot does not point at the completing key"
+        );
         removed.is_some()
+    }
+
+    /// Release a terminal completion during shutdown, without waking anything.
+    fn release_on_drop(entry: Entry, owned: bool) {
+        let key = entry.into_key();
+        if owned {
+            drop(key);
+        } else {
+            warn!("terminal CQE for an op not in flight; leaking its key");
+            let _ = key.into_raw();
+        }
     }
 
     /// Reap completions without waking any future.
@@ -557,29 +573,27 @@ impl Driver {
         } else {
             // Before 5.19 only per-user_data cancellation is available.
             let user_data: Vec<_> = self.in_flight.values().copied().collect();
+            let mut failed = 0;
             for user_data in user_data {
                 let entry = AsyncCancel::new(user_data as _)
                     .build()
                     .user_data(Self::CANCEL);
                 #[allow(clippy::useless_conversion)]
                 if let Err(e) = self.push_cancel_entry(entry.into()) {
-                    warn!("could not push AsyncCancel entry: {e:?}");
-                    break;
+                    trace!("could not push AsyncCancel entry: {e:?}");
+                    failed += 1;
                 }
+            }
+            if failed > 0 {
+                warn!("could not request cancellation for {failed} in-flight op(s)");
             }
         }
     }
 
-    /// Push a cancellation entry.
     fn push_cancel_entry(&mut self, entry: SEntry) -> io::Result<()> {
-        let mut squeue = self.inner.submission();
-        if unsafe { squeue.push(&entry) }.is_err() {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "submission queue is full",
-            ));
-        }
-        squeue.sync();
+        // Completions produced by a flush are reaped by the shutdown loop, so
+        // there is nothing to do here beyond pushing the entry.
+        _ = self.push_entry(&entry)?;
         Ok(())
     }
 
@@ -598,58 +612,31 @@ impl AsRawFd for Driver {
     }
 }
 
+impl CancelOnDrop for Driver {
+    const KIND: &'static str = "io_uring";
+
+    fn reap_pending(&mut self) -> usize {
+        self.reap_completed_for_drop();
+        self.in_flight.len()
+    }
+
+    fn cancel_pending(&mut self) {
+        self.cancel_in_flight();
+    }
+
+    fn wait_pending(&mut self, timeout: Duration) -> io::Result<()> {
+        match self.wait_for_completion(timeout) {
+            Ok(()) => Ok(()),
+            Err(e) if e.raw_os_error() == Some(libc::ETIME) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+}
+
 impl Drop for Driver {
     fn drop(&mut self) {
-        /// How long `Drop` waits for the kernel to cancel or finish in-flight
-        /// requests and reports their completions.
-        const DROP_TIMEOUT: Duration = Duration::from_secs(1);
-
-        let deadline = Instant::now() + DROP_TIMEOUT;
-
-        // Reap whatever the kernel has already finished. This is the common
-        // case when the ring is idle but some completions were not consumed.
-        self.reap_completed_for_drop();
-
-        if !self.in_flight.is_empty() {
-            self.cancel_in_flight();
-
-            loop {
-                self.reap_completed_for_drop();
-                if self.in_flight.is_empty() {
-                    break;
-                }
-
-                let now = Instant::now();
-                if now >= deadline {
-                    break;
-                }
-
-                match self.wait_for_completion(deadline - now) {
-                    Ok(()) => {}
-                    Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-                    Err(e) => {
-                        // `ETIME` means no completion arrived in time; any
-                        // other error means we cannot wait any longer either.
-                        if e.raw_os_error() != Some(libc::ETIME) {
-                            warn!("failed to wait for completions on drop: {e:?}");
-                        }
-                        break;
-                    }
-                }
-            }
-
-            // A completion may have raced with the deadline check.
-            self.reap_completed_for_drop();
-        }
-
-        if !self.in_flight.is_empty() {
-            warn!(
-                "leaking {} in-flight io_uring op(s) on driver drop; the kernel did not finish \
-                 them within {:?}",
-                self.in_flight.len(),
-                DROP_TIMEOUT
-            );
-        }
+        let timeout = self.drop_timeout;
+        self.shutdown(timeout);
     }
 }
 
