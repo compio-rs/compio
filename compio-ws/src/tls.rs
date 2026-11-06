@@ -1,10 +1,9 @@
 //! TLS support for WebSocket connections (native-tls and rustls).
 
 use compio_driver::AsFd;
-use compio_net::TcpStream;
+use compio_net::{SocketWithState, TcpStream};
 use compio_runtime::fd::PollFd;
 use compio_tls::{MaybeTlsStream, TlsConnector};
-use socket2::Socket;
 use tungstenite::{
     Error,
     client::{IntoClientRequest, uri_mode},
@@ -207,7 +206,9 @@ where
 }
 
 /// Connect to a given URL.
-pub async fn connect_async<R>(request: R) -> Result<(WebSocketStream<Socket>, Response), Error>
+pub async fn connect_async<R>(
+    request: R,
+) -> Result<(WebSocketStream<SocketWithState>, Response), Error>
 where
     R: IntoClientRequest,
 {
@@ -218,7 +219,7 @@ where
 pub async fn connect_async_with_config<R>(
     request: R,
     config: impl Into<Config>,
-) -> Result<(WebSocketStream<Socket>, Response), Error>
+) -> Result<(WebSocketStream<SocketWithState>, Response), Error>
 where
     R: IntoClientRequest,
 {
@@ -231,7 +232,7 @@ pub async fn connect_async_tls_with_config<R>(
     request: R,
     config: impl Into<Config>,
     connector: Option<TlsConnector>,
-) -> Result<(WebSocketStream<Socket>, Response), Error>
+) -> Result<(WebSocketStream<SocketWithState>, Response), Error>
 where
     R: IntoClientRequest,
 {

@@ -16,7 +16,7 @@ mod_use![stub];
 use compio_buf::IoBufExt;
 use rustix::net::{RecvFlags, ReturnFlags, SendFlags};
 
-use crate::{PollFirst, sys::prelude::*};
+use crate::sys::prelude::*;
 
 /// Connect to a remote address.
 pub struct Connect<S> {
@@ -84,7 +84,6 @@ pub struct Recv<T: IoBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) flags: RecvFlags,
-    poll_first: bool,
 }
 
 /// Receive data from remote into vectored buffer.
@@ -92,7 +91,6 @@ pub struct RecvVectored<T: IoVectoredBufMut, S> {
     pub(crate) fd: S,
     pub(crate) buffer: T,
     pub(crate) flags: RecvFlags,
-    poll_first: bool,
 }
 
 pub(crate) struct RecvFromHeader<S> {
@@ -100,7 +98,6 @@ pub(crate) struct RecvFromHeader<S> {
     pub(crate) flags: RecvFlags,
     pub(crate) addr: SockAddrStorage,
     pub(crate) addr_len: socklen_t,
-    poll_first: bool,
 }
 
 /// Receive data and source address.
@@ -123,7 +120,6 @@ pub struct RecvMsg<T: IoVectoredBufMut, C: IoBufMut, S> {
     pub(crate) control: C,
     pub(crate) control_len: usize,
     pub(crate) return_flags: ReturnFlags,
-    poll_first: bool,
 }
 
 impl<S> Connect<S> {
@@ -261,14 +257,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> RecvMsg<T, C, S> {
             control,
             control_len: 0,
             return_flags: ReturnFlags::empty(),
-            poll_first: false,
         }
-    }
-}
-
-impl<T: IoVectoredBufMut, C: IoBufMut, S> PollFirst for RecvMsg<T, C, S> {
-    fn poll_first(&mut self) {
-        self.poll_first = true;
     }
 }
 
@@ -288,18 +277,7 @@ impl<T: IoVectoredBufMut, C: IoBufMut, S> IntoInner for RecvMsg<T, C, S> {
 impl<T: IoBufMut, S> Recv<T, S> {
     /// Create [`Recv`].
     pub fn new(fd: S, buffer: T, flags: RecvFlags) -> Self {
-        Self {
-            fd,
-            buffer,
-            flags,
-            poll_first: false,
-        }
-    }
-}
-
-impl<T: IoBufMut, S> PollFirst for Recv<T, S> {
-    fn poll_first(&mut self) {
-        self.poll_first = true;
+        Self { fd, buffer, flags }
     }
 }
 
@@ -314,18 +292,7 @@ impl<T: IoBufMut, S> IntoInner for Recv<T, S> {
 impl<T: IoVectoredBufMut, S> RecvVectored<T, S> {
     /// Create [`RecvVectored`].
     pub fn new(fd: S, buffer: T, flags: RecvFlags) -> Self {
-        Self {
-            fd,
-            buffer,
-            flags,
-            poll_first: false,
-        }
-    }
-}
-
-impl<T: IoVectoredBufMut, S> PollFirst for RecvVectored<T, S> {
-    fn poll_first(&mut self) {
-        self.poll_first = true;
+        Self { fd, buffer, flags }
     }
 }
 
@@ -346,7 +313,6 @@ impl<S> RecvFromHeader<S> {
             addr,
             flags,
             addr_len: name_len,
-            poll_first: false,
         }
     }
 
@@ -362,12 +328,6 @@ impl<T: IoVectoredBufMut, S> RecvFromVectored<T, S> {
             header: RecvFromHeader::new(fd, flags),
             buffer,
         }
-    }
-}
-
-impl<T: IoVectoredBufMut, S> PollFirst for RecvFromVectored<T, S> {
-    fn poll_first(&mut self) {
-        self.header.poll_first = true;
     }
 }
 
@@ -387,12 +347,6 @@ impl<T: IoBufMut, S> RecvFrom<T, S> {
             header: RecvFromHeader::new(fd, flags),
             buffer,
         }
-    }
-}
-
-impl<T: IoBufMut, S> PollFirst for RecvFrom<T, S> {
-    fn poll_first(&mut self) {
-        self.header.poll_first = true;
     }
 }
 

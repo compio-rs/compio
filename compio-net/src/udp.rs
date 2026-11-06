@@ -14,7 +14,7 @@ use compio_runtime::Runtime;
 use futures_util::Stream;
 use socket2::{Protocol, SockAddr, Socket as Socket2, Type};
 
-use crate::{MSG_NOSIGNAL, Socket, ToSocketAddrsAsync};
+use crate::{MSG_NOSIGNAL, Socket, SocketWithState, ToSocketAddrsAsync};
 
 /// A UDP socket.
 ///
@@ -800,4 +800,4 @@ impl UdpSocket {
     }
 }
 
-impl_raw_fd!(UdpSocket, socket2::Socket, inner, socket);
+impl_raw_fd!(UdpSocket, SocketWithState, inner, socket);

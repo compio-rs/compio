@@ -11,11 +11,11 @@ use compio_runtime::SubmitMulti;
 use futures_util::{Stream, StreamExt, stream::FusedStream};
 use socket2::Socket as Socket2;
 
-use crate::Socket;
+use crate::{Socket, SocketWithState};
 
 pub struct Incoming<'a> {
     listener: &'a Socket,
-    op: Option<SubmitMulti<AcceptMulti<SharedFd<Socket2>>>>,
+    op: Option<SubmitMulti<AcceptMulti<SharedFd<SocketWithState>>>>,
 }
 
 impl<'a> Incoming<'a> {

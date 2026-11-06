@@ -90,7 +90,7 @@ unsafe impl OpCode for CloseSocket {
     }
 }
 
-unsafe impl<S: AsFd> OpCode for Accept<S> {
+unsafe impl<S: AsSocketState> OpCode for Accept<S> {
     type Control = ();
 
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
@@ -101,7 +101,7 @@ unsafe impl<S: AsFd> OpCode for Accept<S> {
         )
         .flags(libc::SOCK_CLOEXEC)
         .build();
-        let entry = set_poll_first(entry, self.poll_first);
+        let entry = set_poll_first(entry, self.fd.accept_poll_first());
         entry.into()
     }
 
@@ -198,7 +198,8 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     type Control = SendMsgControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
-        self.header.create_control(ctrl, self.buffer.sys_slices::<Multi<_>>())
+        self.header
+            .create_control(ctrl, self.buffer.sys_slices::<Multi<_>>())
     }
 
     fn create_entry(&mut self, control: &mut Self::Control) -> OpEntry {
@@ -232,7 +233,7 @@ unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
     }
 }
 
-unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
+unsafe impl<T: IoBufMut, S: AsSocketState> OpCode for Recv<T, S> {
     type Control = ();
 
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
@@ -246,7 +247,7 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
         )
         .flags(self.flags.bits() as _)
         .build();
-        let entry = set_poll_first(entry, self.poll_first);
+        let entry = set_poll_first(entry, self.fd.recv_poll_first());
         entry.into()
     }
 
@@ -255,7 +256,7 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
     }
 }
 
-unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
+unsafe impl<T: IoVectoredBufMut, S: AsSocketState> OpCode for RecvVectored<T, S> {
     type Control = RecvVectoredControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
@@ -266,7 +267,7 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
         let entry = opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut control.msg)
             .flags(self.flags.bits() as _)
             .build();
-        let entry = set_poll_first(entry, self.poll_first);
+        let entry = set_poll_first(entry, self.fd.recv_poll_first());
         entry.into()
     }
 
@@ -275,7 +276,7 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     }
 }
 
-impl<S: AsFd> RecvFromHeader<S> {
+impl<S: AsSocketState> RecvFromHeader<S> {
     pub fn create_control(
         &mut self,
         ctrl: &mut RecvMsgControl,
@@ -292,7 +293,7 @@ impl<S: AsFd> RecvFromHeader<S> {
         let entry = opcode::RecvMsg::new(Fd(self.fd.as_fd().as_raw_fd()), &mut control.msg)
             .flags(self.flags.bits() as _)
             .build();
-        let entry = set_poll_first(entry, self.poll_first);
+        let entry = set_poll_first(entry, self.fd.recv_poll_first());
         entry.into()
     }
 
@@ -301,7 +302,7 @@ impl<S: AsFd> RecvFromHeader<S> {
     }
 }
 
-unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
+unsafe impl<T: IoBufMut, S: AsSocketState> OpCode for RecvFrom<T, S> {
     type Control = RecvMsgControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
@@ -327,7 +328,7 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
     }
 }
 
-unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
+unsafe impl<T: IoVectoredBufMut, S: AsSocketState> OpCode for RecvFromVectored<T, S> {
     type Control = RecvMsgControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
@@ -353,7 +354,7 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
     }
 }
 
-unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, S> {
+unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsSocketState> OpCode for RecvMsg<T, C, S> {
     type Control = RecvMsgControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
@@ -364,7 +365,7 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsFd> OpCode for RecvMsg<T, C, 
         let entry = opcode::RecvMsg::new(Fd(self.header.fd.as_fd().as_raw_fd()), &mut control.msg)
             .flags(self.header.flags.bits() as _)
             .build();
-        let entry = set_poll_first(entry, self.poll_first);
+        let entry = set_poll_first(entry, self.header.fd.recv_poll_first());
         entry.into()
     }
 

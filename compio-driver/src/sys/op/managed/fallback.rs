@@ -5,7 +5,7 @@ use rustix::net::{RecvFlags, ReturnFlags};
 use socket2::SockAddr;
 
 use crate::{
-    AsFd, BufferPool, BufferRef, PollFirst,
+    AsFd, BufferPool, BufferRef,
     op::{RecvMsg, TakeBuffer},
     sys::op::{Read, ReadAt, Recv, RecvFrom},
 };
@@ -71,12 +71,6 @@ impl<S> RecvManaged<S> {
     }
 }
 
-impl<S> PollFirst for RecvManaged<S> {
-    fn poll_first(&mut self) {
-        self.op.poll_first();
-    }
-}
-
 impl<S> TakeBuffer for RecvManaged<S> {
     type Buffer = BufferRef;
 
@@ -96,12 +90,6 @@ impl<S: AsFd> RecvFromManaged<S> {
         Ok(Self {
             op: RecvFrom::new(fd, pool.pop()?.with_capacity(len), flags),
         })
-    }
-}
-
-impl<S: AsFd> PollFirst for RecvFromManaged<S> {
-    fn poll_first(&mut self) {
-        self.op.poll_first();
     }
 }
 
@@ -130,12 +118,6 @@ impl<C: IoBufMut, S: AsFd> RecvMsgManaged<C, S> {
         Ok(Self {
             op: RecvMsg::new(fd, [pool.pop()?.with_capacity(len)], control, flags),
         })
-    }
-}
-
-impl<C: IoBufMut, S: AsFd> PollFirst for RecvMsgManaged<C, S> {
-    fn poll_first(&mut self) {
-        self.op.poll_first();
     }
 }
 

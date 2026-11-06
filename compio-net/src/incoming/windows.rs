@@ -10,11 +10,11 @@ use compio_runtime::Submit;
 use futures_util::{FutureExt, Stream, stream::FusedStream};
 use socket2::Socket as Socket2;
 
-use crate::Socket;
+use crate::{Socket, SocketWithState};
 
 pub struct Incoming<'a> {
     listener: &'a Socket,
-    state: Option<Submit<Accept<SharedFd<Socket2>, Socket2>>>,
+    state: Option<Submit<Accept<SharedFd<SocketWithState>, Socket2>>>,
 }
 
 impl<'a> Incoming<'a> {

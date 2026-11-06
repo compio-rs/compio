@@ -6,7 +6,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use compio_net::{TcpListener, TcpStream};
+use compio_net::{SocketWithState, TcpListener, TcpStream};
 use compio_runtime::fd::PollFd;
 use compio_tls::{TlsAcceptor, TlsConnector};
 use rustls::{
@@ -14,7 +14,6 @@ use rustls::{
     crypto::ring::default_provider,
     pki_types::{CertificateDer, PrivateKeyDer},
 };
-use socket2::Socket;
 
 /// The response body: larger than the initial flow-control windows (64 KiB)
 /// and the read buffers, so it goes in many frames and the client must grant
@@ -59,13 +58,13 @@ where
     received.into()
 }
 
-async fn listen() -> (PollFd<Socket>, SocketAddr) {
+async fn listen() -> (PollFd<SocketWithState>, SocketAddr) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
     (listener.into_poll_fd().unwrap(), addr)
 }
 
-async fn connect(addr: SocketAddr) -> PollFd<Socket> {
+async fn connect(addr: SocketAddr) -> PollFd<SocketWithState> {
     let stream = TcpStream::connect(addr).await.unwrap();
     stream.into_poll_fd().unwrap()
 }

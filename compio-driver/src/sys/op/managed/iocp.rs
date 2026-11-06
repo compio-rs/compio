@@ -1,6 +1,6 @@
 use windows_sys::Win32::System::IO::OVERLAPPED;
 
-use crate::{OpCode, sys::op::*};
+use crate::{AsSocketState, OpCode, sys::op::*};
 
 unsafe impl<S: AsFd> OpCode for ReadManagedAt<S> {
     type Control = ();
@@ -105,7 +105,7 @@ unsafe impl<S: AsFd> OpCode for RecvFromMulti<S> {
     }
 }
 
-unsafe impl<C: IoBufMut, S: AsFd> OpCode for RecvMsgManaged<C, S> {
+unsafe impl<C: IoBufMut, S: AsSocketState> OpCode for RecvMsgManaged<C, S> {
     type Control = RecvMsgControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {
@@ -134,7 +134,7 @@ unsafe impl<C: IoBufMut, S: AsFd> OpCode for RecvMsgManaged<C, S> {
     }
 }
 
-unsafe impl<S: AsFd> OpCode for RecvMsgMulti<S> {
+unsafe impl<S: AsSocketState> OpCode for RecvMsgMulti<S> {
     type Control = RecvMsgControl;
 
     unsafe fn init(&mut self, ctrl: &mut Self::Control) {

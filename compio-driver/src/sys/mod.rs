@@ -11,7 +11,10 @@ pub use extra::Extra;
 pub use op::{ResultTakeBuffer, TakeBuffer};
 #[allow(unused_imports)]
 pub use pal::reexport::*;
-pub use pal::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
+pub use pal::{AsFd, AsRawFd, AsSocketState, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
+#[cfg(windows)]
+#[doc(hidden)]
+pub use pal::{win32_result, winsock_result};
 
 // Crate-internal items
 #[allow(unused_imports)]
