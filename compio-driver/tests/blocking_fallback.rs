@@ -16,7 +16,7 @@ use std::{
 use compio_buf::{BufResult, IntoInner};
 use compio_driver::{
     Extra, OpCode, OpEntry, Proactor, PushEntry,
-    op::{Accept, CreateSocket, CurrentDir, Mode, OFlags, OpenFile},
+    op::{Accept, AcceptMulti, CreateSocket, CurrentDir, Mode, OFlags, OpenFile},
 };
 
 /// Forces the blocking path, as `Driver::push` does for unsupported opcodes.
@@ -107,6 +107,23 @@ fn accept() {
     let op = Accept::new(listener);
     let (res, op) = push_and_wait(&mut driver, ForceBlocking(op)).unwrap();
     let (socket, _) = op.0.into_inner();
+
+    assert_owned_open(res, &socket);
+    assert_eq!(
+        socket.peer_addr().unwrap().as_socket(),
+        Some(client.local_addr().unwrap())
+    );
+}
+
+#[test]
+fn accept_multi() {
+    let mut driver = Proactor::new().unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+
+    let op = AcceptMulti::new(listener);
+    let (res, op) = push_and_wait(&mut driver, ForceBlocking(op)).unwrap();
+    let socket = op.0.into_inner();
 
     assert_owned_open(res, &socket);
     assert_eq!(
