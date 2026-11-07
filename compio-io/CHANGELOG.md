@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0-beta.2](https://github.com/compio-rs/compio/compare/compio-io-v0.11.0-beta.1...compio-io-v0.11.0-beta.2) - 2026-11-07
+
+### Added
+
+- *(io,runtime,tls)* tokio::io traits on compat streams and PollFd ([#1120](https://github.com/compio-rs/compio/pull/1120))
+
+### Changed
+
+- *(buf,io)* use write_copy_of_slice for uninit copies ([#1085](https://github.com/compio-rs/compio/pull/1085))
+
+### Fixed
+
+- *(buf)* mark maybe-uninit return unsafe ([#1128](https://github.com/compio-rs/compio/pull/1128))
+- *(io)* derive the ancillary data slice from the buffer pointer ([#1111](https://github.com/compio-rs/compio/pull/1111))
+- *(io)* pass miri ([#1103](https://github.com/compio-rs/compio/pull/1103))
+
+### Other
+
+- *(deps)* bump rust-toolchain ([#1117](https://github.com/compio-rs/compio/pull/1117))
+- run compio-buf and compio-io tests under miri ([#1090](https://github.com/compio-rs/compio/pull/1090))
+- *(deps)* bump rust-toolchain from nightly-2026-09-22 to nightly-2026-09-29 ([#1078](https://github.com/compio-rs/compio/pull/1078))
+
 ## 0.11.0-beta.1 - 2026-09-27
 
 ### Added
