@@ -3,12 +3,11 @@ use std::{
     num::NonZeroU16,
     ptr::{NonNull, null_mut},
     slice,
-    sync::atomic::Ordering,
+    sync::atomic::{AtomicU16, Ordering},
 };
 
 use io_uring::types::BufRingEntry;
 use rustix::mm::{MapFlags, ProtFlags, mmap_anonymous, munmap};
-use synchrony::unsync::atomic::AtomicU16;
 
 use crate::{
     assert_not_impl,
@@ -125,10 +124,16 @@ impl BufControl {
         unsafe { slice::from_raw_parts_mut(self.ptr.as_ptr().cast(), self.len.get() as _) }
     }
 
+    /// The ring tail, shared with the kernel, which reads it with
+    /// `smp_load_acquire`. It must be a real atomic: the `Release` store in
+    /// [`commit`] is what orders the entry writes before the tail update.
+    ///
+    /// [`commit`]: Self::commit
     fn tail(&self) -> &AtomicU16 {
-        // SAFETY: Entries are initialized and aligned, and ptr is page-aligned
-        // guaranteed by anonymous mmap
-        unsafe { &*BufRingEntry::tail(self.ptr.as_ptr()).cast() }
+        // SAFETY: `ptr` is the page-aligned base of the ring, mapped until
+        // `release`, so the tail field is valid and 2-byte aligned. It is only
+        // accessed through this atomic: entry setters never touch `resv`.
+        unsafe { AtomicU16::from_ptr(BufRingEntry::tail(self.ptr.as_ptr()).cast_mut()) }
     }
 
     /// Add a buffer to the ring.
@@ -143,7 +148,10 @@ impl BufControl {
     ///
     /// [`commit`]: Self::commit
     unsafe fn add_buffer(&mut self, buffer_id: u16, ptr: BufPtr, len: u32, offset: u16) {
-        let idx = (self.tail().load(Ordering::Acquire) + offset) % self.len;
+        // Relaxed: `BufControl` is `!Send + !Sync`, the tail's only writer.
+        let tail = self.tail().load(Ordering::Relaxed).wrapping_add(offset);
+        // `len` is a power of two, or the kernel would have rejected the ring.
+        let idx = tail & (self.len.get() - 1);
 
         let entry = &mut self.as_slice_mut()[idx as usize];
 
@@ -159,6 +167,12 @@ impl BufControl {
     /// Caller must ensure the buffers in range [curr, curr + count) are valid
     /// and not in use.
     unsafe fn commit(&self, count: u16) {
-        self.tail().fetch_add(count, Ordering::Release);
+        let tail = self.tail();
+        // Single writer, so no RMW is needed; `Release` publishes the entries
+        // written by `add_buffer`, like liburing's `io_uring_buf_ring_advance`.
+        tail.store(
+            tail.load(Ordering::Relaxed).wrapping_add(count),
+            Ordering::Release,
+        );
     }
 }
