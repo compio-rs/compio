@@ -18,12 +18,16 @@ unsafe impl OpCode for CreateSocket {
     }
 
     fn call_blocking(&mut self, _: &mut Self::Control) -> io::Result<usize> {
-        self.call()
+        self.call()?;
+        // Return ownership through the result like the kernel does: `set_result`
+        // is the only place that adopts the fd.
+        let fd = self.opened_fd.take().expect("socket not created");
+        Ok(fd.into_raw_fd() as _)
     }
 
     unsafe fn set_result(&mut self, _: &mut Self::Control, res: &io::Result<usize>, _: &Extra) {
         if let Ok(fd) = res {
-            // SAFETY: fd is a valid fd returned from kernel
+            // SAFETY: fd is a valid fd returned from kernel or `call_blocking`
             let fd = unsafe { Socket2::from_raw_fd(*fd as _) };
             self.opened_fd = Some(fd);
         }
@@ -107,14 +111,17 @@ unsafe impl<S: AsSocketState> OpCode for Accept<S> {
 
     unsafe fn set_result(&mut self, _: &mut Self::Control, res: &io::Result<usize>, _: &Extra) {
         if let Ok(fd) = res {
-            // SAFETY: fd is a valid fd returned from kernel
+            // SAFETY: fd is a valid fd returned from kernel or `call_blocking`
             let fd = unsafe { Socket2::from_raw_fd(*fd as _) };
             self.accepted_fd = Some(fd);
         }
     }
 
     fn call_blocking(&mut self, _: &mut Self::Control) -> io::Result<usize> {
-        self.call()
+        self.call()?;
+        // See `CreateSocket::call_blocking`.
+        let fd = self.accepted_fd.take().expect("socket not accepted");
+        Ok(fd.into_raw_fd() as _)
     }
 }
 
