@@ -343,13 +343,24 @@ impl Driver {
     }
 
     fn push_raw_with_key(&mut self, entry: SEntry, key: ErasedKey) -> io::Result<()> {
+        // Leak and record the key first, so that queueing the SQE is the last
+        // step: nothing may fail or panic once the kernel holds `user_data`.
+        // `as_iour_mut` runs before anything is recorded.
         let user_data = key.as_raw();
-        let entry = entry.user_data(user_data as _);
-        self.push_raw(entry)?; // if push failed, do not leak the key. Drop it upon return.
-
-        let slot = self.in_flight.insert(user_data);
-        key.borrow().extra_mut().as_iour_mut().set_in_flight(slot);
+        {
+            let mut op = key.borrow();
+            let extra = op.extra_mut().as_iour_mut();
+            extra.set_in_flight(self.in_flight.insert(user_data));
+        }
         key.into_raw();
+
+        if let Err(e) = self.push_raw(entry.user_data(user_data as _)) {
+            // SAFETY: the SQE was not queued, so the reference leaked above is
+            // still ours.
+            let key = unsafe { ErasedKey::from_raw(user_data) };
+            Self::remove_in_flight(&mut self.in_flight, &key);
+            return Err(e);
+        }
         Ok(())
     }
 
