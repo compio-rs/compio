@@ -15,7 +15,7 @@
 )]
 
 mod incoming;
-pub mod offload;
+mod offload;
 mod resolve;
 mod socket;
 pub(crate) mod split;
@@ -27,6 +27,7 @@ mod unix;
 #[deprecated(since = "0.12.0", note = "Use `compio::runtime::fd::PollFd` instead")]
 pub type PollFd<T> = compio_runtime::fd::PollFd<T>;
 pub(crate) use incoming::*;
+pub use offload::{gro_segment_size, push_gso_segment_size};
 pub use resolve::ToSocketAddrsAsync;
 pub(crate) use resolve::{each_addr, first_addr_buf, first_addr_buf_zerocopy};
 pub(crate) use socket::*;

@@ -3,11 +3,11 @@ use compio_io::ancillary::{AncillaryBuilder, CodecError};
 
 use crate::Socket;
 
-pub(super) fn set_gro(_socket: &Socket, _enable: bool) -> std::io::Result<()> {
+pub(crate) fn set_gro(_socket: &Socket, _enable: bool) -> std::io::Result<()> {
     Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
 }
 
-pub(super) fn max_gso_segments(_socket: &Socket) -> usize {
+pub(crate) fn max_gso_segments(_socket: &Socket) -> usize {
     1
 }
 
@@ -18,6 +18,4 @@ pub(super) fn push_segment_size<B: IoBufMut + ?Sized>(
     Ok(())
 }
 
-pub(super) unsafe fn segment_size(_control: &[u8]) -> Result<Option<usize>, CodecError> {
-    Ok(None)
-}
+pub(super) const GRO_CMSG: Option<(i32, i32)> = None;

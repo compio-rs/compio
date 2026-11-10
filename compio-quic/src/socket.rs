@@ -17,7 +17,7 @@ use std::{
 
 use compio_buf::{BufResult, IntoInner, IoBuf, IoBufExt, IoBufMut, buf_try};
 use compio_io::ancillary::{AncillaryBuf, AncillaryIter, CodecError};
-use compio_net::{UdpSocket, offload};
+use compio_net::{UdpSocket, gro_segment_size, push_gso_segment_size};
 use quinn_proto::{EcnCodepoint, Transmit};
 #[cfg(windows)]
 use windows_sys::Win32::Networking::WinSock;
@@ -202,7 +202,10 @@ impl Socket {
         let max_gro_segments = match socket.set_gro(true) {
             Ok(()) => 64,
             Err(e) if error_is_unsupported(&e) => 1,
-            Err(e) => return Err(e),
+            Err(e) => {
+                compio_log::warn!("failed to enable GRO: {}", e);
+                return Err(e);
+            }
         };
 
         // GSO
@@ -316,7 +319,7 @@ impl Socket {
             }
             // GRO
             // SAFETY: `control` is exactly the buffer `recv_msg` filled.
-            if let Some(gro_stride) = unsafe { offload::segment_size(&control) }? {
+            if let Some(gro_stride) = unsafe { gro_segment_size(&control) }? {
                 stride = gro_stride;
             }
             Ok::<(), CodecError>(())
@@ -431,7 +434,7 @@ impl Socket {
         if let Some(segment_size) = transmit.segment_size
             && segment_size < transmit.size
         {
-            offload::push_segment_size(&mut builder, segment_size as u16)?;
+            push_gso_segment_size(&mut builder, segment_size as u16)?;
         }
 
         Ok(control)
