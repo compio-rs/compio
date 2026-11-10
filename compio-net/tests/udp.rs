@@ -1,5 +1,5 @@
 use compio_io::ancillary::{AncillaryBuf, ReturnFlags};
-use compio_net::{UdpSocket, gro_segment_size, push_gso_segment_size};
+use compio_net::{UdpSocket, gro_segment_size};
 
 #[compio_macros::test]
 async fn connect() {
@@ -152,6 +152,8 @@ async fn gro_segment_size_empty_control() {
 #[cfg(any(target_os = "linux", target_os = "android"))]
 #[compio_macros::test]
 async fn gso_gro_roundtrip() {
+    use compio_net::push_gso_segment_size;
+
     const SEGMENT_SIZE: usize = 128;
     const SEGMENTS: usize = 4;
 
