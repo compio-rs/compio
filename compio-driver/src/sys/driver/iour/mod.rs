@@ -27,7 +27,7 @@ cfg_select! {
 use flume::{Receiver, Sender};
 use io_uring::{
     EnterFlags, IoUring,
-    cqueue::more,
+    cqueue::{more, notif},
     opcode::{AsyncCancel, PollAdd},
     types::{Fd, SubmitArgs, Timespec},
 };
@@ -296,10 +296,10 @@ impl Driver {
                         let key = unsafe { BorrowedKey::from_raw(key as _) };
                         let mut key = key.borrow();
                         let mut extra: crate::sys::Extra = IourExtra::new().into();
-                        extra.set_flags(entry.flags());
+                        extra.set_flags(flags);
                         unsafe {
                             key.carrier
-                                .push_multishot(create_result(entry.result()), extra);
+                                .push_multishot(create_result(entry.result(), flags), extra);
                         }
                         key.wake_by_ref();
                     } else {
@@ -532,17 +532,22 @@ impl Drop for Driver {
 }
 
 fn create_entry(cq_entry: CEntry) -> Entry {
-    let result = cq_entry.result();
-    let result = create_result(result);
+    let flags = cq_entry.flags();
+    let result = create_result(cq_entry.result(), flags);
     let key = unsafe { ErasedKey::from_raw(cq_entry.user_data() as _) };
     let mut entry = Entry::new(key, result);
-    entry.set_flags(cq_entry.flags());
+    entry.set_flags(flags);
 
     entry
 }
 
-fn create_result(result: i32) -> io::Result<usize> {
-    if result < 0 {
+fn create_result(result: i32, flags: u32) -> io::Result<usize> {
+    if notif(flags) {
+        // The result of a zerocopy notification is a set of flags, not an
+        // errno: with `IORING_SEND_ZC_REPORT_USAGE` the kernel sets
+        // `IORING_NOTIF_USAGE_ZC_COPIED` (`1 << 31`) when the data was copied.
+        Ok(result as u32 as usize)
+    } else if result < 0 {
         // ENOBUFS indicates the io_uring buffer pool has no available buffer.
         if -result == libc::ENOBUFS {
             Err(io::Error::new(

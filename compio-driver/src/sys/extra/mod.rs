@@ -76,6 +76,11 @@ impl Extra {
         /// the CQE. On other platforms, this will always return the
         /// [`Unsupported`] error.
         ///
+        /// The result of a notification is never an error: it is the `res`
+        /// field of the CQE, read as `u32`. When the send was submitted with
+        /// `IORING_SEND_ZC_REPORT_USAGE`, `IORING_NOTIF_USAGE_ZC_COPIED` is set
+        /// in it if the kernel copied the data instead of sending it in place.
+        ///
         /// [`Unsupported`]: io::ErrorKind::Unsupported
         get fn is_notification(&self) -> io::Result<bool> = |extra| Ok(extra.is_notification());
 
