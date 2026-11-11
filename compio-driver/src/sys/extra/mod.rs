@@ -96,6 +96,23 @@ impl Extra {
                 .buffer_id()
                 .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Buffer id was not set"));
 
+        /// Checks whether the kernel keeps the buffer of this completion for
+        /// more completions.
+        ///
+        /// # Behaviour
+        ///
+        /// This is only supported on `io_uring` drivers, in which the driver will
+        /// check whether the `IORING_CQE_F_BUF_MORE` flag was set by the kernel
+        /// for the CQE. It is only set for a buffer ring registered with
+        /// `IOU_PBUF_RING_INC`, whose buffers are consumed incrementally: the
+        /// buffer identified by [`buffer_id`] is then only partially used, the
+        /// next completion with that id continues where this one ended, and the
+        /// buffer must not be given back to the ring yet. On other platforms,
+        /// this will always return the [`Unsupported`] error.
+        ///
+        /// [`buffer_id`]: Extra::buffer_id
+        /// [`Unsupported`]: io::ErrorKind::Unsupported
+        get fn buffer_more(&self) -> io::Result<bool> = |extra| Ok(extra.buffer_more());
 
         /// Get the personality for this operation.
         ///
