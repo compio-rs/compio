@@ -30,12 +30,16 @@ Example:
 
 ```rust
 use compio::dispatcher::Dispatcher;
+use std::num::NonZeroUsize;
 
-let dispatcher = Dispatcher::builder().worker_threads(4).build().unwrap();
+let dispatcher = Dispatcher::builder()
+    .worker_threads(NonZeroUsize::new(4).unwrap())
+    .build()
+    .unwrap();
 let result = dispatcher.dispatch(async || {
     // Your async work here
     42
-}).await;
+}).unwrap().await.unwrap();
 ```
 
 Notice that you're dispatching a `Send` async closure to the other threads. The `Future` returned by the closure does not need to be `Send`, which is convenient since lots of the operations are single-thread and not `Send` in `compio`.
