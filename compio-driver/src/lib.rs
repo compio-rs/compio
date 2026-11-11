@@ -569,6 +569,7 @@ pub struct ProactorBuilder {
     defer_taskrun: bool,
     eventfd: Option<RawFd>,
     driver_type: Option<DriverType>,
+    drop_timeout: Duration,
     op_flags: OpCodeFlag,
     buffer_pool_size: u16,
     buffer_pool_flag: u16,
@@ -601,6 +602,7 @@ impl ProactorBuilder {
             defer_taskrun: false,
             eventfd: None,
             driver_type: None,
+            drop_timeout: Duration::from_secs(5),
             op_flags: OpCodeFlag::empty(),
             buffer_pool_size: 8,
             buffer_pool_flag: 0,
@@ -790,6 +792,17 @@ impl ProactorBuilder {
     /// It is ignored if the fusion driver is disabled.
     pub fn driver_type(&mut self, t: DriverType) -> &mut Self {
         self.driver_type = Some(t);
+        self
+    }
+
+    /// Set how long a dropped [`Proactor`] waits for its in-flight operations
+    /// to be cancelled and released.
+    ///
+    /// Operations that are still in flight after this timeout are leaked,
+    /// because the kernel may still be reading from or writing to their
+    /// buffers. The default is 5 seconds.
+    pub fn drop_timeout(&mut self, timeout: Duration) -> &mut Self {
+        self.drop_timeout = timeout;
         self
     }
 

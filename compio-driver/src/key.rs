@@ -460,6 +460,12 @@ impl BorrowedKey {
         Self(ManuallyDrop::new(key))
     }
 
+    #[cfg(windows)]
+    pub unsafe fn from_optr(optr: *mut crate::sys::Overlapped) -> Self {
+        let key = unsafe { ErasedKey::from_optr(optr) };
+        Self(ManuallyDrop::new(key))
+    }
+
     pub fn upgrade(self) -> ErasedKey {
         ManuallyDrop::into_inner(self.0)
     }
