@@ -58,6 +58,28 @@ pub unsafe trait OpCode {
         Ok(())
     }
 
+    /// Resolve the error of a failed completion.
+    ///
+    /// The driver converts the NTSTATUS of a failed completion to a Win32
+    /// error code, as `GetOverlappedResult` does. An operation on a socket
+    /// overrides this to report the Winsock error code instead, through
+    /// `winsock_completion_error`.
+    ///
+    /// # Safety
+    ///
+    /// `optr` must point to the overlapped of this operation, which has
+    /// completed.
+    unsafe fn completion_error(
+        &self,
+        control: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        _ = control;
+        _ = optr;
+        error
+    }
+
     /// Set the result when it completes.
     /// The operation stores the result and is responsible to release it if
     /// the operation is cancelled.
@@ -81,6 +103,8 @@ pub(crate) trait Carry {
 
     fn cancel(&mut self, optr: *mut OVERLAPPED) -> io::Result<()>;
 
+    unsafe fn completion_error(&self, optr: *const OVERLAPPED, error: io::Error) -> io::Error;
+
     unsafe fn set_result(&mut self, _: &io::Result<usize>, _: &crate::Extra);
 }
 
@@ -98,6 +122,11 @@ impl<T: OpCode> Carry for Carrier<T> {
     fn cancel(&mut self, optr: *mut OVERLAPPED) -> io::Result<()> {
         let (op, control) = self.as_iocp_mut();
         op.cancel(control, optr)
+    }
+
+    unsafe fn completion_error(&self, optr: *const OVERLAPPED, error: io::Error) -> io::Error {
+        let (op, control) = self.as_iocp();
+        unsafe { op.completion_error(control, optr, error) }
     }
 
     unsafe fn set_result(&mut self, res: &io::Result<usize>, extra: &crate::Extra) {

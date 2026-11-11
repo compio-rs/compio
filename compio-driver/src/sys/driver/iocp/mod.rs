@@ -156,10 +156,13 @@ impl Driver {
             return None;
         }
 
-        let entry = Entry::new(
-            unsafe { ErasedKey::from_optr(entry.overlapped) },
-            entry.result,
-        );
+        let key = unsafe { ErasedKey::from_optr(entry.overlapped) };
+        let result = entry.result.map_err(|error| unsafe {
+            key.borrow()
+                .carrier
+                .completion_error(entry.overlapped.cast_const().cast(), error)
+        });
+        let entry = Entry::new(key, result);
 
         // if there's no wait, just return the entry
         let Some(w) = waits.remove(&entry.user_data()) else {

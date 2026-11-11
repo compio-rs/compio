@@ -112,6 +112,15 @@ unsafe impl<S: AsSocketState, SA: AsFd> OpCode for Accept<S, SA> {
     fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
+
+    unsafe fn completion_error(
+        &self,
+        _: &(),
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { winsock_completion_error(self.fd.as_fd().as_raw_fd(), optr, error) }
+    }
 }
 
 impl<S: AsSocketState> Connect<S> {
@@ -151,6 +160,15 @@ unsafe impl<S: AsSocketState> OpCode for Connect<S> {
     fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
+
+    unsafe fn completion_error(
+        &self,
+        _: &(),
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { winsock_completion_error(self.fd.as_fd().as_raw_fd(), optr, error) }
+    }
 }
 
 /// Disconnect a connected socket and reuse it for another connection.
@@ -174,6 +192,15 @@ unsafe impl<S: AsSocketState> OpCode for Disconnect<S> {
 
     fn cancel(&mut self, _: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
+    }
+
+    unsafe fn completion_error(
+        &self,
+        _: &(),
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { winsock_completion_error(self.fd.as_fd().as_raw_fd(), optr, error) }
     }
 }
 
@@ -215,6 +242,15 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for Recv<T, S> {
     fn cancel(&mut self, _: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
+
+    unsafe fn completion_error(
+        &self,
+        _: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { winsock_completion_error(self.fd.as_fd().as_raw_fd(), optr, error) }
+    }
 }
 
 #[derive(Default)]
@@ -255,6 +291,15 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvVectored<T, S> {
     fn cancel(&mut self, _: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
+
+    unsafe fn completion_error(
+        &self,
+        _: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { winsock_completion_error(self.fd.as_fd().as_raw_fd(), optr, error) }
+    }
 }
 
 #[derive(Default)]
@@ -293,6 +338,15 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for Send<T, S> {
     fn cancel(&mut self, _: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
     }
+
+    unsafe fn completion_error(
+        &self,
+        _: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { winsock_completion_error(self.fd.as_fd().as_raw_fd(), optr, error) }
+    }
 }
 
 #[derive(Default)]
@@ -330,6 +384,15 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendVectored<T, S> {
 
     fn cancel(&mut self, _: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
+    }
+
+    unsafe fn completion_error(
+        &self,
+        _: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { winsock_completion_error(self.fd.as_fd().as_raw_fd(), optr, error) }
     }
 }
 
@@ -373,6 +436,15 @@ unsafe impl<T: IoBufMut, S: AsFd> OpCode for RecvFrom<T, S> {
     fn cancel(&mut self, _: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.header.fd.as_fd().as_raw_fd(), optr)
     }
+
+    unsafe fn completion_error(
+        &self,
+        _: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { winsock_completion_error(self.header.fd.as_fd().as_raw_fd(), optr, error) }
+    }
 }
 
 #[derive(Default)]
@@ -415,6 +487,15 @@ unsafe impl<T: IoVectoredBufMut, S: AsFd> OpCode for RecvFromVectored<T, S> {
     fn cancel(&mut self, _: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.header.fd.as_fd().as_raw_fd(), optr)
     }
+
+    unsafe fn completion_error(
+        &self,
+        _: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { winsock_completion_error(self.header.fd.as_fd().as_raw_fd(), optr, error) }
+    }
 }
 
 #[derive(Default)]
@@ -454,6 +535,15 @@ unsafe impl<T: IoBuf, S: AsFd> OpCode for SendTo<T, S> {
 
     fn cancel(&mut self, _: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.header.fd.as_fd().as_raw_fd(), optr)
+    }
+
+    unsafe fn completion_error(
+        &self,
+        _: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { winsock_completion_error(self.header.fd.as_fd().as_raw_fd(), optr, error) }
     }
 }
 
@@ -495,6 +585,15 @@ unsafe impl<T: IoVectoredBuf, S: AsFd> OpCode for SendToVectored<T, S> {
     fn cancel(&mut self, _: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.header.fd.as_fd().as_raw_fd(), optr)
     }
+
+    unsafe fn completion_error(
+        &self,
+        _: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { winsock_completion_error(self.header.fd.as_fd().as_raw_fd(), optr, error) }
+    }
 }
 
 #[derive(Default)]
@@ -533,6 +632,15 @@ unsafe impl<T: IoVectoredBufMut, C: IoBufMut, S: AsSocketState> OpCode for RecvM
 
     fn cancel(&mut self, _: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.header.fd.as_fd().as_raw_fd(), optr)
+    }
+
+    unsafe fn completion_error(
+        &self,
+        _: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { winsock_completion_error(self.header.fd.as_fd().as_raw_fd(), optr, error) }
     }
 
     unsafe fn set_result(
@@ -596,5 +704,14 @@ unsafe impl<T: IoVectoredBuf, C: IoBuf, S: AsFd> OpCode for SendMsg<T, C, S> {
 
     fn cancel(&mut self, _: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
         cancel(self.fd.as_fd().as_raw_fd(), optr)
+    }
+
+    unsafe fn completion_error(
+        &self,
+        _: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { winsock_completion_error(self.fd.as_fd().as_raw_fd(), optr, error) }
     }
 }

@@ -14,7 +14,7 @@ pub use pal::reexport::*;
 pub use pal::{AsFd, AsRawFd, AsSocketState, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 #[cfg(windows)]
 #[doc(hidden)]
-pub use pal::{win32_result, winsock_result};
+pub use pal::{win32_result, winsock_completion_error, winsock_result};
 
 // Crate-internal items
 #[allow(unused_imports)]
