@@ -5,10 +5,23 @@
 use std::{io::Write, num::NonZeroU16, os::unix::net::UnixStream};
 
 use compio_driver::{
-    AsRawFd, OpCode, Proactor, ProactorBuilder, PushEntry, SharedFd, op::RecvManaged,
+    AsFd, AsRawFd, AsSocketState, BorrowedFd, OpCode, Proactor, ProactorBuilder, PushEntry,
+    SharedFd, op::RecvManaged,
 };
 use io_uring::types::IOU_PBUF_RING_INC;
 use rustix::net::RecvFlags;
+
+/// A plain fd has no per-socket readiness state, so it is wrapped to satisfy
+/// [AsSocketState].
+struct Socket(UnixStream);
+
+impl AsFd for Socket {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.0.as_fd()
+    }
+}
+
+impl AsSocketState for Socket {}
 
 fn push_and_wait_with_extra<O: OpCode + 'static>(
     driver: &mut Proactor,
@@ -48,7 +61,7 @@ fn recv_buffer_more(flags: u16, data: &[u8]) -> Option<bool> {
     };
 
     let (rx, mut tx) = UnixStream::pair().unwrap();
-    let rx = SharedFd::new(rx);
+    let rx = SharedFd::new(Socket(rx));
     driver.attach(rx.as_raw_fd()).unwrap();
     tx.write_all(data).unwrap();
 
