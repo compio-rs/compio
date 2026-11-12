@@ -23,6 +23,12 @@ pub(crate) enum FuseDriver {
 impl Driver {
     /// Create a new fusion driver with given number of entries
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
+        if builder.reactor_factory.is_some() && builder.driver_type != Some(DriverType::Poll) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "a reactor can only be set when driver type is DriverType::Poll",
+            ));
+        }
         let (ty, fallback) = match &builder.driver_type {
             Some(t) => (*t, false),
             None => (DriverType::suggest(builder.op_flags), true),

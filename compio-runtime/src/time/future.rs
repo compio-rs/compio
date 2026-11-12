@@ -151,7 +151,7 @@ impl Interval {
             self.first_ticked = true;
             self.start
         } else {
-            let now = Instant::now();
+            let now = super::now();
             let next = now + self.period
                 - Duration::from_nanos(
                     ((now - self.start).as_nanos() % self.period.as_nanos()) as _,

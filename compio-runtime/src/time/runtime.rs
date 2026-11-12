@@ -1,10 +1,13 @@
 use std::{
     collections::BTreeMap,
+    sync::Arc,
     task::{Context, Poll, Waker},
     time::{Duration, Instant},
 };
 
 use compio_log::{debug, instrument};
+
+use super::Clock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct TimerKey {
@@ -12,17 +15,35 @@ pub(crate) struct TimerKey {
     generation: u64,
 }
 
-#[derive(Debug)]
 pub(crate) struct TimerRuntime {
     generation: u64,
     wheel: BTreeMap<TimerKey, Option<Waker>>,
+    clock: Option<Arc<dyn Clock>>,
+}
+
+impl std::fmt::Debug for TimerRuntime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TimerRuntime")
+            .field("generation", &self.generation)
+            .field("wheel", &self.wheel)
+            .field("clock", &self.clock.is_some())
+            .finish()
+    }
 }
 
 impl TimerRuntime {
-    pub fn new() -> Self {
+    pub fn new(clock: Option<Arc<dyn Clock>>) -> Self {
         Self {
             generation: 0,
             wheel: BTreeMap::default(),
+            clock,
+        }
+    }
+
+    pub fn now(&self) -> Instant {
+        match &self.clock {
+            Some(clock) => clock.now(),
+            None => Instant::now(),
         }
     }
 
@@ -33,7 +54,7 @@ impl TimerRuntime {
 
     /// Insert a new timer. If the deadline is in the past, return `None`.
     pub fn insert(&mut self, deadline: Instant) -> Option<TimerKey> {
-        if deadline <= Instant::now() {
+        if deadline <= self.now() {
             return None;
         }
         let key = TimerKey {
@@ -75,7 +96,7 @@ impl TimerRuntime {
     /// Get the minimum timeout duration for the next poll.
     pub fn min_timeout(&self) -> Option<Duration> {
         self.wheel.first_key_value().map(|(key, _)| {
-            let now = Instant::now();
+            let now = self.now();
             key.deadline.saturating_duration_since(now)
         })
     }
@@ -86,7 +107,7 @@ impl TimerRuntime {
             return;
         }
 
-        let now = Instant::now();
+        let now = self.now();
         let due = ..=TimerKey {
             deadline: now,
             generation: u64::MAX,
