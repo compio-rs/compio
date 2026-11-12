@@ -6,6 +6,9 @@ use slotmap::DefaultKey;
 pub(in crate::sys) struct Extra {
     sqe_flags: Flags,
     cqe_flags: u32,
+    /// `IORING_NOTIF_USAGE_ZC_COPIED` was set in the `res` of this
+    /// notification.
+    zc_copied: bool,
     personality: Option<u16>,
     /// Slot of this op inside the `in_flight` map of the `io_uring` driver,
     /// set while the op is in flight.
@@ -19,6 +22,7 @@ impl Extra {
         Self {
             sqe_flags: Flags::empty(),
             cqe_flags: 0,
+            zc_copied: false,
             personality: None,
             in_flight: None,
         }
@@ -68,6 +72,10 @@ impl Extra {
     pub fn is_notification(&self) -> bool {
         io_uring::cqueue::notif(self.cqe_flags)
     }
+
+    pub fn zc_copied(&self) -> bool {
+        self.zc_copied
+    }
 }
 
 #[allow(dead_code)]
@@ -101,6 +109,12 @@ impl crate::sys::Extra {
     pub(crate) fn set_flags(&mut self, flag: u32) {
         if let Some(extra) = self.try_as_iour_mut() {
             extra.cqe_flags = flag;
+        }
+    }
+
+    pub(crate) fn set_zc_copied(&mut self, zc_copied: bool) {
+        if let Some(extra) = self.try_as_iour_mut() {
+            extra.zc_copied = zc_copied;
         }
     }
 }

@@ -27,10 +27,11 @@ cfg_select! {
 use flume::{Receiver, Sender};
 use io_uring::{
     EnterFlags, IoUring,
-    cqueue::more,
+    cqueue::{more, notif},
     opcode::{AsyncCancel, PollAdd},
     types::{Fd, SubmitArgs, Timespec},
 };
+use linux_raw_sys::io_uring::IORING_NOTIF_USAGE_ZC_COPIED;
 use slotmap::{DefaultKey, SlotMap};
 
 use crate::{
@@ -532,14 +533,27 @@ impl Drop for Driver {
 }
 
 fn create_entry(cq_entry: CEntry) -> Entry {
-    let result = cq_entry.result();
+    let flags = cq_entry.flags();
+    let mut result = cq_entry.result();
+    // A zerocopy notification carries no errno: with
+    // `IORING_SEND_ZC_REPORT_USAGE` the kernel sets
+    // `IORING_NOTIF_USAGE_ZC_COPIED` (`1 << 31`) in its `res` when the data
+    // was copied, and nothing else.
+    let zc_copied = notif(flags) && (result & ZC_COPIED) != 0;
+    if zc_copied {
+        result &= !ZC_COPIED;
+    }
     let result = create_result(result);
     let key = unsafe { ErasedKey::from_raw(cq_entry.user_data() as _) };
     let mut entry = Entry::new(key, result);
-    entry.set_flags(cq_entry.flags());
+    entry.set_flags(flags);
+    entry.set_zc_copied(zc_copied);
 
     entry
 }
+
+/// `IORING_NOTIF_USAGE_ZC_COPIED`, as a bit of the CQE's `res`.
+const ZC_COPIED: i32 = IORING_NOTIF_USAGE_ZC_COPIED as i32;
 
 fn create_result(result: i32) -> io::Result<usize> {
     if result < 0 {
