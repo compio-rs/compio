@@ -1,7 +1,7 @@
 //! A zerocopy notification reports its usage in the sign bit of `res`, which
 //! must not be read as an errno.
 
-#![cfg(all(io_uring, not(fusion)))]
+#![cfg(io_uring)]
 
 use std::{
     io::{self, Read},
@@ -10,9 +10,9 @@ use std::{
 };
 
 use compio_buf::BufResult;
-use compio_driver::{Extra, OpCode, OpEntry, Proactor, PushEntry};
+use compio_driver::{Extra, IourOpCode, OpEntry, Proactor, PushEntry};
 use io_uring::{opcode, types::Fd};
-use linux_raw_sys::io_uring::{IORING_NOTIF_USAGE_ZC_COPIED, IORING_SEND_ZC_REPORT_USAGE};
+use linux_raw_sys::io_uring::IORING_SEND_ZC_REPORT_USAGE;
 
 const PAYLOAD: &[u8; 12] = b"Hello world!";
 
@@ -20,9 +20,10 @@ struct SendZcReportUsage {
     stream: TcpStream,
     sent: Option<io::Result<usize>>,
     notification: Option<bool>,
+    copied: Option<bool>,
 }
 
-unsafe impl OpCode for SendZcReportUsage {
+unsafe impl IourOpCode for SendZcReportUsage {
     type Control = ();
 
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
@@ -42,6 +43,7 @@ unsafe impl OpCode for SendZcReportUsage {
 
     unsafe fn set_result(&mut self, _: &mut Self::Control, _: &io::Result<usize>, extra: &Extra) {
         self.notification = Some(extra.is_notification().unwrap());
+        self.copied = Some(extra.zc_copied().unwrap());
     }
 
     unsafe fn push_multishot(&mut self, _: &mut Self::Control, res: io::Result<usize>, _: Extra) {
@@ -50,6 +52,21 @@ unsafe impl OpCode for SendZcReportUsage {
 
     fn pop_multishot(&mut self, _: &mut Self::Control) -> Option<BufResult<usize, Extra>> {
         None
+    }
+}
+
+/// The fusion driver needs a polling half too; the test only pushes the op
+/// on io_uring.
+#[cfg(fusion)]
+unsafe impl compio_driver::PollOpCode for SendZcReportUsage {
+    type Control = ();
+
+    fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<compio_driver::Decision> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+
+    fn operate(&mut self, _: &mut Self::Control) -> std::task::Poll<io::Result<usize>> {
+        unreachable!("pre_submit never submits")
     }
 }
 
@@ -74,6 +91,7 @@ fn send_zc_report_usage() {
         stream: TcpStream::connect(addr).unwrap(),
         sent: None,
         notification: None,
+        copied: None,
     };
     let BufResult(res, op) = match driver.push(op) {
         PushEntry::Ready(res) => res,
@@ -94,8 +112,9 @@ fn send_zc_report_usage() {
     };
     assert_eq!(sent.unwrap(), PAYLOAD.len());
     assert_eq!(op.notification, Some(true));
+    assert_eq!(res.unwrap(), 0);
     // Loopback never sends in place, so the kernel always reports a copy.
-    assert_eq!(res.unwrap(), IORING_NOTIF_USAGE_ZC_COPIED as usize);
+    assert_eq!(op.copied, Some(true));
 
     if let Err(e) = handle.join() {
         std::panic::resume_unwind(e)

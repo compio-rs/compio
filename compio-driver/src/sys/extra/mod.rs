@@ -76,13 +76,27 @@ impl Extra {
         /// the CQE. On other platforms, this will always return the
         /// [`Unsupported`] error.
         ///
-        /// The result of a notification is never an error: it is the `res`
-        /// field of the CQE, read as `u32`. When the send was submitted with
-        /// `IORING_SEND_ZC_REPORT_USAGE`, `IORING_NOTIF_USAGE_ZC_COPIED` is set
-        /// in it if the kernel copied the data instead of sending it in place.
+        /// The result of a notification is `Ok(0)`; whether the kernel copied
+        /// the data is reported by [`zc_copied`].
         ///
+        /// [`zc_copied`]: Extra::zc_copied
         /// [`Unsupported`]: io::ErrorKind::Unsupported
         get fn is_notification(&self) -> io::Result<bool> = |extra| Ok(extra.is_notification());
+
+        /// Checks whether this notification reports that the kernel copied
+        /// the data of the zerocopy send instead of sending it in place.
+        ///
+        /// # Behaviour
+        ///
+        /// This is only supported on `io_uring` drivers, in which the driver will
+        /// check whether the kernel set `IORING_NOTIF_USAGE_ZC_COPIED` in the
+        /// result of the notification, which it only reports for a send
+        /// submitted with `IORING_SEND_ZC_REPORT_USAGE`. It is `false` for any
+        /// other completion. On other platforms, this will always return the
+        /// [`Unsupported`] error.
+        ///
+        /// [`Unsupported`]: io::ErrorKind::Unsupported
+        get fn zc_copied(&self) -> io::Result<bool> = |extra| Ok(extra.zc_copied());
 
         /// Try to get the buffer ID associated with this operation.
         ///

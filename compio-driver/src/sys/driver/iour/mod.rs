@@ -31,6 +31,7 @@ use io_uring::{
     opcode::{AsyncCancel, PollAdd},
     types::{Fd, SubmitArgs, Timespec},
 };
+use linux_raw_sys::io_uring::IORING_NOTIF_USAGE_ZC_COPIED;
 use slotmap::{DefaultKey, SlotMap};
 
 use crate::{
@@ -296,10 +297,10 @@ impl Driver {
                         let key = unsafe { BorrowedKey::from_raw(key as _) };
                         let mut key = key.borrow();
                         let mut extra: crate::sys::Extra = IourExtra::new().into();
-                        extra.set_flags(flags);
+                        extra.set_flags(entry.flags());
                         unsafe {
                             key.carrier
-                                .push_multishot(create_result(entry.result(), flags), extra);
+                                .push_multishot(create_result(entry.result()), extra);
                         }
                         key.wake_by_ref();
                     } else {
@@ -533,21 +534,29 @@ impl Drop for Driver {
 
 fn create_entry(cq_entry: CEntry) -> Entry {
     let flags = cq_entry.flags();
-    let result = create_result(cq_entry.result(), flags);
+    let mut result = cq_entry.result();
+    // A zerocopy notification carries no errno: with
+    // `IORING_SEND_ZC_REPORT_USAGE` the kernel sets
+    // `IORING_NOTIF_USAGE_ZC_COPIED` (`1 << 31`) in its `res` when the data
+    // was copied, and nothing else.
+    let zc_copied = notif(flags) && (result & ZC_COPIED) != 0;
+    if zc_copied {
+        result &= !ZC_COPIED;
+    }
+    let result = create_result(result);
     let key = unsafe { ErasedKey::from_raw(cq_entry.user_data() as _) };
     let mut entry = Entry::new(key, result);
     entry.set_flags(flags);
+    entry.set_zc_copied(zc_copied);
 
     entry
 }
 
-fn create_result(result: i32, flags: u32) -> io::Result<usize> {
-    if notif(flags) {
-        // The result of a zerocopy notification is a set of flags, not an
-        // errno: with `IORING_SEND_ZC_REPORT_USAGE` the kernel sets
-        // `IORING_NOTIF_USAGE_ZC_COPIED` (`1 << 31`) when the data was copied.
-        Ok(result as u32 as usize)
-    } else if result < 0 {
+/// `IORING_NOTIF_USAGE_ZC_COPIED`, as a bit of the CQE's `res`.
+const ZC_COPIED: i32 = IORING_NOTIF_USAGE_ZC_COPIED as i32;
+
+fn create_result(result: i32) -> io::Result<usize> {
+    if result < 0 {
         // ENOBUFS indicates the io_uring buffer pool has no available buffer.
         if -result == libc::ENOBUFS {
             Err(io::Error::new(

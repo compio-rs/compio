@@ -479,6 +479,9 @@ pub(crate) struct Entry {
 
     #[cfg(io_uring)]
     flags: u32,
+    /// A zerocopy notification reports that the kernel copied the data.
+    #[cfg(io_uring)]
+    zc_copied: bool,
 }
 
 unsafe impl Send for Entry {}
@@ -496,6 +499,7 @@ impl Entry {
                 key,
                 result,
                 flags: 0,
+                zc_copied: false,
             }
         }
     }
@@ -520,9 +524,19 @@ impl Entry {
         self.flags = flags;
     }
 
+    #[cfg(io_uring)]
+    pub(crate) fn set_zc_copied(&mut self, zc_copied: bool) {
+        self.zc_copied = zc_copied;
+    }
+
     pub fn notify(self) {
         #[cfg(io_uring)]
-        self.key.borrow().extra_mut().set_flags(self.flags());
+        {
+            let mut op = self.key.borrow();
+            let extra = op.extra_mut();
+            extra.set_flags(self.flags());
+            extra.set_zc_copied(self.zc_copied);
+        }
         self.key.set_result(self.result);
     }
 }
