@@ -805,7 +805,10 @@ impl ProactorBuilder {
 
     /// Flag to be used to initialize buffer pool.
     ///
-    /// This is only supported on io-uring driver.
+    /// This is only supported on io-uring driver. `IOU_PBUF_RING_INC` is
+    /// refused when the pool is created: the pool gives a buffer back to the
+    /// ring once its completion is dropped, while on an incrementally consumed
+    /// ring the kernel may still be writing into it.
     ///
     /// Default to be `0`.
     pub fn buffer_pool_flag(&mut self, flag: u16) -> &mut Self {
