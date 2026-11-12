@@ -502,7 +502,8 @@ impl RuntimeBuilder {
         self
     }
 
-    /// Run the runtime's timers on `clock` instead of [`std::time::Instant::now`].
+    /// Run the runtime's timers on `clock` instead of
+    /// [`std::time::Instant::now`].
     #[cfg(feature = "time")]
     pub fn clock(&mut self, clock: std::sync::Arc<dyn crate::time::Clock>) -> &mut Self {
         self.clock = Some(crate::time::ClockHandle(clock));
@@ -557,7 +558,9 @@ impl RuntimeBuilder {
             executor: Rc::new(executor),
             driver: Rc::new(RefCell::new(driver)),
             #[cfg(feature = "time")]
-            timer_runtime: Rc::new(RefCell::new(TimerRuntime::new(clock.as_ref().map(|c| c.0.clone())))),
+            timer_runtime: Rc::new(RefCell::new(TimerRuntime::new(
+                clock.as_ref().map(|c| c.0.clone()),
+            ))),
         })
     }
 }
