@@ -1,11 +1,11 @@
 //! The second half of a 32-byte CQE reaches the op through `Extra`.
 
-#![cfg(all(io_uring, not(fusion), feature = "io-uring-cqe32"))]
+#![cfg(all(io_uring, feature = "io-uring-cqe32"))]
 
 use std::io;
 
 use compio_buf::BufResult;
-use compio_driver::{Extra, OpCode, OpEntry, Proactor, PushEntry};
+use compio_driver::{Extra, IourOpCode, OpEntry, Proactor, PushEntry};
 use io_uring::opcode;
 use linux_raw_sys::io_uring::io_uring_sqe;
 
@@ -18,7 +18,7 @@ struct NopCqe32 {
     big_cqe: Option<io::Result<[u64; 2]>>,
 }
 
-unsafe impl OpCode for NopCqe32 {
+unsafe impl IourOpCode for NopCqe32 {
     type Control = ();
 
     fn create_entry(&mut self, _: &mut Self::Control) -> OpEntry {
@@ -35,6 +35,21 @@ unsafe impl OpCode for NopCqe32 {
 
     unsafe fn set_result(&mut self, _: &mut Self::Control, _: &io::Result<usize>, extra: &Extra) {
         self.big_cqe = Some(extra.big_cqe());
+    }
+}
+
+/// The fusion driver needs a polling half too; the test only pushes the op
+/// on io_uring.
+#[cfg(fusion)]
+unsafe impl compio_driver::PollOpCode for NopCqe32 {
+    type Control = ();
+
+    fn pre_submit(&mut self, _: &mut Self::Control) -> io::Result<compio_driver::Decision> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+
+    fn operate(&mut self, _: &mut Self::Control) -> std::task::Poll<io::Result<usize>> {
+        unreachable!("pre_submit never submits")
     }
 }
 
