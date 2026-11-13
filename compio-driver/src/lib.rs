@@ -257,12 +257,25 @@ impl Proactor {
 
     /// Push an operation into the driver with user-defined [`Extra`], and
     /// return the unique key [`Key`], associated with it.
+    ///
+    /// The operation completes with [`InvalidInput`] if `extra` was created
+    /// for another driver type.
+    ///
+    /// [`InvalidInput`]: io::ErrorKind::InvalidInput
     pub fn push_with_extra<T: sys::OpCode + 'static>(
         &mut self,
         op: T,
         extra: Extra,
     ) -> PushEntry<Key<T>, BufResult<usize, T>> {
-        let key = Key::new(op, extra, self.driver_type());
+        let driver_type = self.driver_type();
+        if !extra.is_for(driver_type) {
+            let err = io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "`Extra` was created for another driver type",
+            );
+            return PushEntry::Ready(BufResult(Err(err), op));
+        }
+        let key = Key::new(op, extra, driver_type);
         match self.driver.push(key.clone().erase()) {
             Poll::Pending => PushEntry::Pending(key),
             Poll::Ready(res) => {
