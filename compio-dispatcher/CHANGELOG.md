@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0-beta.2](https://github.com/compio-rs/compio/compare/compio-dispatcher-v0.12.0-beta.1...compio-dispatcher-v0.12.0-beta.2) - 2026-11-13
+
+### Added
+
+- *(dispatcher)* take AsyncFnOnce in dispatch ([#1115](https://github.com/compio-rs/compio/pull/1115))
+
+### Other
+
+- *(dispatcher)* fix compile errors in README example ([#1143](https://github.com/compio-rs/compio/pull/1143))
+
 ## 0.12.0-beta.1 - 2026-09-27
 
 ### Added
