@@ -1,6 +1,10 @@
 #![cfg_attr(feature = "sanitize", feature(cfg_sanitize))]
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::{
+    io::ErrorKind,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    time::Duration,
+};
 
 use compio_io::{
     AsyncWriteExt,
@@ -147,6 +151,22 @@ test_connect! {
 #[compio_macros::test]
 async fn connect_invalid_dst() {
     assert!(TcpStream::connect("127.0.0.0:0").await.is_err());
+}
+
+/// A refused connection is reported with the error code of the socket API, so
+/// that it is recognized as [`ErrorKind::ConnectionRefused`].
+#[compio_macros::test]
+async fn connect_refused() {
+    let addr = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap();
+
+    let err = compio_runtime::time::timeout(Duration::from_secs(10), TcpStream::connect(addr))
+        .await
+        .expect("connecting to a closed port timed out")
+        .expect_err("connecting to a closed port must fail");
+    assert_eq!(err.kind(), ErrorKind::ConnectionRefused, "{err:?}");
 }
 
 #[cfg_attr(windows, ignore)]

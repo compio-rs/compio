@@ -16,6 +16,15 @@ unsafe impl<S: AsFd> OpCode for ReadManagedAt<S> {
     fn cancel(&mut self, control: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
         self.op.cancel(control, optr)
     }
+
+    unsafe fn completion_error(
+        &self,
+        control: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { self.op.completion_error(control, optr, error) }
+    }
 }
 
 unsafe impl<S: AsFd> OpCode for ReadManaged<S> {
@@ -31,6 +40,15 @@ unsafe impl<S: AsFd> OpCode for ReadManaged<S> {
 
     fn cancel(&mut self, control: &mut (), optr: *mut OVERLAPPED) -> io::Result<()> {
         self.op.cancel(control, optr)
+    }
+
+    unsafe fn completion_error(
+        &self,
+        control: &(),
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { self.op.completion_error(control, optr, error) }
     }
 }
 
@@ -52,6 +70,15 @@ unsafe impl<S: AsFd> OpCode for RecvManaged<S> {
     fn cancel(&mut self, control: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
         self.op.cancel(control, optr)
     }
+
+    unsafe fn completion_error(
+        &self,
+        control: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { self.op.completion_error(control, optr, error) }
+    }
 }
 
 unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
@@ -72,6 +99,15 @@ unsafe impl<S: AsFd> OpCode for RecvFromManaged<S> {
     fn cancel(&mut self, control: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
         self.op.cancel(control, optr)
     }
+
+    unsafe fn completion_error(
+        &self,
+        control: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { self.op.completion_error(control, optr, error) }
+    }
 }
 
 unsafe impl<S: AsFd> OpCode for RecvFromMulti<S> {
@@ -91,6 +127,15 @@ unsafe impl<S: AsFd> OpCode for RecvFromMulti<S> {
 
     fn cancel(&mut self, control: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
         self.op.cancel(control, optr)
+    }
+
+    unsafe fn completion_error(
+        &self,
+        control: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { self.op.completion_error(control, optr, error) }
     }
 
     unsafe fn set_result(
@@ -124,6 +169,15 @@ unsafe impl<C: IoBufMut, S: AsSocketState> OpCode for RecvMsgManaged<C, S> {
         self.op.cancel(control, optr)
     }
 
+    unsafe fn completion_error(
+        &self,
+        control: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { self.op.completion_error(control, optr, error) }
+    }
+
     unsafe fn set_result(
         &mut self,
         control: &mut Self::Control,
@@ -151,6 +205,15 @@ unsafe impl<S: AsSocketState> OpCode for RecvMsgMulti<S> {
 
     fn cancel(&mut self, control: &mut Self::Control, optr: *mut OVERLAPPED) -> io::Result<()> {
         self.op.cancel(control, optr)
+    }
+
+    unsafe fn completion_error(
+        &self,
+        control: &Self::Control,
+        optr: *const OVERLAPPED,
+        error: io::Error,
+    ) -> io::Error {
+        unsafe { self.op.completion_error(control, optr, error) }
     }
 
     unsafe fn set_result(

@@ -6,11 +6,11 @@ use windows_sys::Win32::{
     Foundation::{
         ERROR_BROKEN_PIPE, ERROR_HANDLE_EOF, ERROR_IO_INCOMPLETE, ERROR_IO_PENDING,
         ERROR_MORE_DATA, ERROR_NETNAME_DELETED, ERROR_NO_DATA, ERROR_NOT_FOUND,
-        ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED, GetLastError,
+        ERROR_OPERATION_ABORTED, ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED, GetLastError,
     },
     Networking::WinSock::{
         LPWSAOVERLAPPED_COMPLETION_ROUTINE, SOCKADDR, SOCKET, WSAECONNRESET, WSAGetLastError,
-        WSAMSG,
+        WSAGetOverlappedResult, WSAMSG,
     },
     System::IO::{CancelIoEx, OVERLAPPED},
 };
@@ -109,6 +109,39 @@ pub fn winsock_result(res: i32, transferred: u32) -> Poll<io::Result<usize>> {
         winapi_poll_result(transferred, unsafe { WSAGetLastError() as _ })
     } else {
         Poll::Ready(Ok(transferred as _))
+    }
+}
+
+/// Resolve the error of a failed overlapped socket operation to the Winsock
+/// error code.
+///
+/// A completion packet carries the NTSTATUS of the operation, which the driver
+/// converts to a Win32 error code. For a socket that is not the code a Winsock
+/// call reports: a refused connection is `ERROR_CONNECTION_REFUSED` instead of
+/// `WSAECONNREFUSED`, and [`io::Error::kind`] does not recognize it.
+/// `WSAGetOverlappedResult` asks the provider of the socket for its own error.
+///
+/// A cancelled operation keeps `ERROR_OPERATION_ABORTED`, the code
+/// cancellation is detected by.
+///
+/// # Safety
+///
+/// `optr` must point to the overlapped of a completed operation on `socket`.
+pub unsafe fn winsock_completion_error(
+    socket: RawFd,
+    optr: *const OVERLAPPED,
+    error: io::Error,
+) -> io::Error {
+    if error.raw_os_error() == Some(ERROR_OPERATION_ABORTED as _) {
+        return error;
+    }
+    let mut transferred = 0;
+    let mut flags = 0;
+    let res = unsafe { WSAGetOverlappedResult(socket as _, optr, &mut transferred, 0, &mut flags) };
+    if res == 0 {
+        io::Error::from_raw_os_error(unsafe { WSAGetLastError() })
+    } else {
+        error
     }
 }
 
