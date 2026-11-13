@@ -297,6 +297,8 @@ impl Driver {
                         let mut key = key.borrow();
                         let mut extra: crate::sys::Extra = IourExtra::new().into();
                         extra.set_flags(entry.flags());
+                        #[cfg(feature = "io-uring-cqe32")]
+                        extra.set_big_cqe(*entry.big_cqe());
                         unsafe {
                             key.carrier
                                 .push_multishot(create_result(entry.result()), extra);
@@ -537,6 +539,8 @@ fn create_entry(cq_entry: CEntry) -> Entry {
     let key = unsafe { ErasedKey::from_raw(cq_entry.user_data() as _) };
     let mut entry = Entry::new(key, result);
     entry.set_flags(cq_entry.flags());
+    #[cfg(feature = "io-uring-cqe32")]
+    entry.set_big_cqe(*cq_entry.big_cqe());
 
     entry
 }
