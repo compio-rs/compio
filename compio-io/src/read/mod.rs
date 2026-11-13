@@ -54,6 +54,29 @@ pub trait AsyncRead {
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         loop_read_vectored!(buf, iter, self.read(iter))
     }
+
+    /// Specialization hook for [`crate::util::copy`] and
+    /// [`crate::util::copy_with_size`].
+    ///
+    /// Implementations must copy through EOF, then flush and shut down the
+    /// writer, returning the number of bytes written. `buf_size` selects the
+    /// transfer size; `None` uses backend defaults. The default implementation
+    /// uses a userspace buffer, defaulting to 8 KiB. Adapters that buffer,
+    /// limit, or transform reads must not delegate unless they preserve
+    /// those semantics.
+    #[doc(hidden)]
+    async fn copy_to<W: crate::AsyncWrite + ?Sized>(
+        &mut self,
+        writer: &mut W,
+        buf_size: Option<usize>,
+    ) -> crate::IoResult<u64> {
+        crate::util::copy_buffered(
+            self,
+            writer,
+            buf_size.unwrap_or(crate::util::DEFAULT_BUF_SIZE),
+        )
+        .await
+    }
 }
 
 impl<A: AsyncRead + ?Sized> AsyncRead for &mut A {
@@ -65,6 +88,14 @@ impl<A: AsyncRead + ?Sized> AsyncRead for &mut A {
     #[inline(always)]
     async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
         (**self).read_vectored(buf).await
+    }
+
+    async fn copy_to<W: crate::AsyncWrite + ?Sized>(
+        &mut self,
+        writer: &mut W,
+        buf_size: Option<usize>,
+    ) -> crate::IoResult<u64> {
+        (**self).copy_to(writer, buf_size).await
     }
 }
 
@@ -79,6 +110,14 @@ impl<R: AsyncRead + ?Sized, #[cfg(feature = "allocator_api")] A: Allocator> Asyn
     #[inline(always)]
     async fn read_vectored<T: IoVectoredBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
         (**self).read_vectored(buf).await
+    }
+
+    async fn copy_to<W: crate::AsyncWrite + ?Sized>(
+        &mut self,
+        writer: &mut W,
+        buf_size: Option<usize>,
+    ) -> crate::IoResult<u64> {
+        (**self).copy_to(writer, buf_size).await
     }
 }
 
