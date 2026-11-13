@@ -1,5 +1,5 @@
 use compio_io::ancillary::{AncillaryBuf, ReturnFlags};
-use compio_net::UdpSocket;
+use compio_net::{UdpSocket, gro_segment_size};
 
 #[compio_macros::test]
 async fn connect() {
@@ -130,6 +130,64 @@ async fn recv_msg_flags() {
     assert_eq!(control_len, 0);
     assert_eq!(addr, active_addr);
     assert_eq!(flags, ReturnFlags::empty());
+}
+
+#[compio_macros::test]
+async fn gro_segment_size_empty_control() {
+    let passive = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let passive_addr = passive.local_addr().unwrap();
+
+    let active = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+
+    active.send_to("foo", passive_addr).await.0.unwrap();
+
+    let ((_n, control_len, _addr, _flags), (_buffer, control)) = passive
+        .recv_msg(Vec::with_capacity(20), AncillaryBuf::<64>::new())
+        .await
+        .unwrap();
+    assert_eq!(control_len, 0);
+    assert_eq!(unsafe { gro_segment_size(&control) }.unwrap(), None);
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[compio_macros::test]
+async fn gso_gro_roundtrip() {
+    use compio_net::push_gso_segment_size;
+
+    const SEGMENT_SIZE: usize = 128;
+    const SEGMENTS: usize = 4;
+
+    let passive = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    passive.set_gro(true).unwrap();
+    let passive_addr = passive.local_addr().unwrap();
+
+    let active = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    if active.max_gso_segments() < SEGMENTS {
+        return;
+    }
+
+    let mut control = AncillaryBuf::<64>::new();
+    push_gso_segment_size(&mut control.builder(), SEGMENT_SIZE as u16).unwrap();
+    active
+        .send_msg(vec![0xAB; SEGMENT_SIZE * SEGMENTS], control, passive_addr)
+        .await
+        .0
+        .unwrap();
+
+    // loopback keeps the GSO batch intact, so it arrives as one coalesced
+    // buffer
+    let ((n, _control_len, _addr, _flags), (_buffer, control)) = passive
+        .recv_msg(
+            Vec::with_capacity(u16::MAX as usize),
+            AncillaryBuf::<64>::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(n, SEGMENT_SIZE * SEGMENTS);
+    assert_eq!(
+        unsafe { gro_segment_size(&control) }.unwrap(),
+        Some(SEGMENT_SIZE)
+    );
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]

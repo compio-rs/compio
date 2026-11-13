@@ -180,7 +180,7 @@ bytemuck = ["compio-io?/bytemuck"]
 
 # QUIC
 qlog = ["compio-quic?/qlog"]
-windows-gro = ["compio-quic?/windows-gro"]
+windows-gro = ["compio-net?/windows-gro", "compio-quic?/windows-gro"]
 
 # TLS
 py-dynamic-openssl = ["tls", "compio-tls/py-dynamic-openssl"]

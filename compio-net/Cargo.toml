@@ -22,7 +22,7 @@ targets = [
 # Workspace dependencies
 compio-buf = { workspace = true }
 compio-driver = { workspace = true }
-compio-io = { workspace = true, features = ["ancillary"] }
+compio-io = { workspace = true, features = ["ancillary", "bytemuck"] }
 compio-runtime = { workspace = true }
 
 either = "1.9.0"
@@ -57,3 +57,5 @@ once_cell_try = []
 sanitize = []
 nightly = ["once_cell_try", "sanitize"]
 sync = []
+# Windows GRO, opt-in due to https://github.com/quinn-rs/quinn/issues/2041
+windows-gro = []
