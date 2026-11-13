@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0-beta.2](https://github.com/compio-rs/compio/compare/compio-net-v0.13.0-beta.1...compio-net-v0.13.0-beta.2) - 2026-11-13
+
+### Added
+
+- *(net)* create PollFd from TcpListener and UnixListener ([#1126](https://github.com/compio-rs/compio/pull/1126))
+- *(dispatcher)* take AsyncFnOnce in dispatch ([#1115](https://github.com/compio-rs/compio/pull/1115))
+
+### Changed
+
+- *(driver,net)* [**breaking**] socket state ([#1133](https://github.com/compio-rs/compio/pull/1133))
+
+### Fixed
+
+- *(driver,iocp)* translate ERROR_NETNAME_DELETED to WSAECONNRESET ([#1092](https://github.com/compio-rs/compio/pull/1092))
+
 ## 0.13.0-beta.1 - 2026-09-27
 
 ### Added
