@@ -96,6 +96,12 @@ impl Runtime {
         RuntimeBuilder::new()
     }
 
+    /// The current instant on this runtime's clock.
+    #[cfg(feature = "time")]
+    pub fn now(&self) -> std::time::Instant {
+        self.timer_runtime.borrow().now()
+    }
+
     /// The current driver type.
     pub fn driver_type(&self) -> DriverType {
         self.driver.borrow().driver_type()
@@ -464,6 +470,8 @@ impl criterion::async_executor::AsyncExecutor for &Runtime {
 #[derive(Debug, Clone)]
 pub struct RuntimeBuilder {
     proactor_builder: ProactorBuilder,
+    #[cfg(feature = "time")]
+    clock: Option<crate::time::ClockHandle>,
     thread_affinity: HashSet<usize>,
     local_queue_size: usize,
     event_interval: u32,
@@ -480,6 +488,8 @@ impl RuntimeBuilder {
     pub fn new() -> Self {
         Self {
             proactor_builder: ProactorBuilder::new(),
+            #[cfg(feature = "time")]
+            clock: None,
             event_interval: 61,
             local_queue_size: 64,
             thread_affinity: HashSet::new(),
@@ -489,6 +499,14 @@ impl RuntimeBuilder {
     /// Replace proactor builder.
     pub fn with_proactor(&mut self, builder: ProactorBuilder) -> &mut Self {
         self.proactor_builder = builder;
+        self
+    }
+
+    /// Run the runtime's timers on `clock` instead of
+    /// [`std::time::Instant::now`].
+    #[cfg(feature = "time")]
+    pub fn clock(&mut self, clock: std::sync::Arc<dyn crate::time::Clock>) -> &mut Self {
+        self.clock = Some(crate::time::ClockHandle(clock));
         self
     }
 
@@ -520,6 +538,8 @@ impl RuntimeBuilder {
     pub fn build(&self) -> io::Result<Runtime> {
         let RuntimeBuilder {
             proactor_builder,
+            #[cfg(feature = "time")]
+            clock,
             thread_affinity,
             local_queue_size,
             event_interval,
@@ -538,7 +558,9 @@ impl RuntimeBuilder {
             executor: Rc::new(executor),
             driver: Rc::new(RefCell::new(driver)),
             #[cfg(feature = "time")]
-            timer_runtime: Rc::new(RefCell::new(TimerRuntime::new())),
+            timer_runtime: Rc::new(RefCell::new(TimerRuntime::new(
+                clock.as_ref().map(|c| c.0.clone()),
+            ))),
         })
     }
 }

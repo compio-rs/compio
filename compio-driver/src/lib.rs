@@ -34,6 +34,9 @@ pub use key::Key;
 mod asyncify;
 pub use asyncify::*;
 
+#[cfg(polling)]
+pub mod reactor;
+
 mod fd;
 pub use fd::*;
 
@@ -589,6 +592,8 @@ pub struct ProactorBuilder {
     buffer_pool_flag: u16,
     buffer_pool_buffer_len: usize,
     buffer_pool_allocator: BufferAlloc,
+    #[cfg(polling)]
+    reactor_factory: Option<reactor::ReactorFactory>,
 }
 
 // SAFETY: `RawFd` is thread safe.
@@ -621,6 +626,8 @@ impl ProactorBuilder {
             buffer_pool_flag: 0,
             buffer_pool_buffer_len: 8192,
             buffer_pool_allocator: BufferAlloc::new::<BoxAllocator>(),
+            #[cfg(polling)]
+            reactor_factory: None,
         }
     }
 
@@ -797,6 +804,26 @@ impl ProactorBuilder {
     /// [`Unsupported`]: std::io::ErrorKind::Unsupported
     pub fn detect_opcode_support(&mut self, flags: OpCodeFlag) -> &mut Self {
         self.op_flags = flags;
+        self
+    }
+
+    /// Use the polling driver, with a [`Reactor`](reactor::Reactor) from
+    /// `reactor_builder` as its readiness backend instead of the OS poller.
+    ///
+    /// This sets the driver type to [`DriverType::Poll`]; building fails if a
+    /// later [`driver_type`](Self::driver_type) call chooses another.
+    ///
+    /// `reactor_builder` is called once per proactor, on the thread that builds
+    /// it.
+    #[cfg(polling)]
+    pub fn reactor(
+        &mut self,
+        reactor_builder: impl Fn() -> io::Result<Box<dyn reactor::Reactor>> + Send + Sync + 'static,
+    ) -> &mut Self {
+        self.reactor_factory = Some(reactor::ReactorFactory(std::sync::Arc::new(
+            reactor_builder,
+        )));
+        self.driver_type = Some(DriverType::Poll);
         self
     }
 

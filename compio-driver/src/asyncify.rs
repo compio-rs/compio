@@ -89,6 +89,7 @@ pub struct AsyncifyPool {
     counter: Arc<AtomicUsize>,
     thread_limit: usize,
     recv_timeout: Duration,
+    inline: bool,
 }
 
 impl AsyncifyPool {
@@ -102,6 +103,17 @@ impl AsyncifyPool {
             counter: Arc::new(AtomicUsize::new(0)),
             thread_limit,
             recv_timeout,
+            inline: false,
+        }
+    }
+
+    /// Create [`AsyncifyPool`] that runs every dispatchable on the calling
+    /// thread, before [`dispatch`](Self::dispatch) returns, instead of on a
+    /// worker thread. This is useful for, e.g., deterministic simulation.
+    pub fn inline() -> Self {
+        Self {
+            inline: true,
+            ..Self::new(0, Duration::ZERO)
         }
     }
 
@@ -110,6 +122,11 @@ impl AsyncifyPool {
     /// limit has been reached, it will return an error with the original
     /// dispatchable.
     pub fn dispatch<D: Dispatchable>(&self, f: D) -> Result<(), DispatchError<D>> {
+        if self.inline {
+            Box::new(f).run();
+            return Ok(());
+        }
+
         match self.sender.try_send(Box::new(f) as BoxedDispatchable) {
             Ok(_) => Ok(()),
             Err(e) => match e {
