@@ -26,6 +26,7 @@ compio-buf = { workspace = true }
 compio-io = { workspace = true }
 compio-net = { workspace = true }
 compio-macros = { workspace = true }
+compio-runtime = { workspace = true, features = ["time"] }
 
 futures-util = { workspace = true }
 tracing = { workspace = true }
