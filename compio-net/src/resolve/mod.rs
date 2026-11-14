@@ -11,6 +11,7 @@ cfg_select! {
 }
 
 use std::{
+    cell::RefCell,
     future::{Future, Ready, ready},
     io,
     iter::from_fn,
@@ -23,8 +24,7 @@ use compio_buf::{BufResult, buf_try};
 use compio_runtime::time::sleep;
 use either::Either;
 use futures_util::{
-    StreamExt,
-    future::Either as EitherFut,
+    FutureExt, Stream, StreamExt, select,
     stream::{self, FuturesUnordered},
 };
 pub use sys::resolve_sock_addrs;
@@ -166,36 +166,39 @@ pub async fn each_addr<T>(
 ) -> io::Result<T> {
     let addrs = addr.to_socket_addrs_async().await?;
 
-    let futs = if racing {
-        let futs: FuturesUnordered<_> = sort_addrs(addrs)
-            .enumerate()
-            .map(async |(i, addr)| {
-                if i != 0 {
-                    sleep(HAPPY_EYEBALLS_STAGGER_DELAY * i as u32).await
-                }
-                f(addr).await
-            })
-            .collect();
-        EitherFut::Left(futs)
-    } else {
-        EitherFut::Right(stream::iter(addrs).then(async |addr| f(addr).await))
-    };
-    let mut futs = pin!(futs);
-
-    let mut last_err = None;
-    while let Some(res) = futs.next().await {
-        match res {
-            Ok(conn) => return Ok(conn),
-            Err(e) => last_err = Some(e),
+    async fn applier<T>(stream: impl Stream<Item = io::Result<T>>) -> io::Result<T> {
+        let mut last_err = None;
+        let mut stream = pin!(stream);
+        while let Some(res) = stream.next().await {
+            match res {
+                Ok(conn) => return Ok(conn),
+                Err(e) => last_err = Some(e),
+            }
         }
+
+        Err(last_err.unwrap_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "could not resolve to any addresses",
+            )
+        }))
     }
 
-    Err(last_err.unwrap_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "could not resolve to any addresses",
-        )
-    }))
+    if racing {
+        let futs = RefCell::new(FuturesUnordered::new());
+        let stagger = stream::iter(sort_addrs(addrs)).filter_map(async |addr| {
+            futs.borrow().push(f(addr));
+            select! {
+                res = std::future::poll_fn(|cx| futs.borrow_mut().poll_next_unpin(cx)).fuse() => res,
+                _ = sleep(HAPPY_EYEBALLS_STAGGER_DELAY).fuse() => None,
+            }
+        });
+
+        let drain = stream::poll_fn(|cx| futs.borrow_mut().poll_next_unpin(cx));
+        applier(stagger.chain(drain)).await
+    } else {
+        applier(stream::iter(addrs).then(|addr| f(addr))).await
+    }
 }
 
 pub async fn first_addr_buf<T, B>(
