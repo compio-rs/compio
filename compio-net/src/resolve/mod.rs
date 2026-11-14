@@ -168,7 +168,6 @@ pub async fn each_addr<T>(
 
     let futs = if racing {
         let futs: FuturesUnordered<_> = sort_addrs(addrs)
-            .into_iter()
             .enumerate()
             .map(async |(i, addr)| {
                 if i != 0 {
