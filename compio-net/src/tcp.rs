@@ -80,7 +80,7 @@ impl TcpListener {
     /// To configure the socket before binding, you can use the [`TcpSocket`]
     /// type.
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
-        super::each_addr(addr, async |addr| {
+        super::each_addr(addr, false, async |addr| {
             let sa = SockAddr::from(addr);
             let socket = Socket::new(sa.domain(), Type::STREAM, Some(Protocol::TCP)).await?;
             socket.socket.set_reuse_address(true)?;
@@ -262,7 +262,7 @@ impl TcpStream {
     pub async fn connect(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
 
-        super::each_addr(addr, async |addr| {
+        super::each_addr(addr, true, async |addr| {
             let addr2 = SockAddr::from(addr);
             let socket = Socket::new(addr2.domain(), Type::STREAM, Some(Protocol::TCP)).await?;
             if cfg!(windows) {

@@ -13,11 +13,20 @@ cfg_select! {
 use std::{
     future::{Future, Ready, ready},
     io,
+    iter::from_fn,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
+    pin::pin,
+    time::Duration,
 };
 
 use compio_buf::{BufResult, buf_try};
+use compio_runtime::time::sleep;
 use either::Either;
+use futures_util::{
+    StreamExt,
+    future::Either as EitherFut,
+    stream::{self, FuturesUnordered},
+};
 pub use sys::resolve_sock_addrs;
 
 /// A trait for objects which can be converted or resolved to one or more
@@ -132,18 +141,56 @@ impl<T: ToSocketAddrsAsync + ?Sized> ToSocketAddrsAsync for &T {
     }
 }
 
+static HAPPY_EYEBALLS_STAGGER_DELAY: Duration = Duration::from_millis(200);
+
+fn sort_addrs(addrs: impl IntoIterator<Item = SocketAddr>) -> impl Iterator<Item = SocketAddr> {
+    let (v6, v4): (Vec<_>, Vec<_>) = addrs.into_iter().partition(SocketAddr::is_ipv6);
+    let (mut iter6, mut iter4) = (v6.into_iter(), v4.into_iter());
+    let mut next_is_v6 = true;
+
+    from_fn(move || {
+        let res = if next_is_v6 {
+            iter6.next().or_else(|| iter4.next())
+        } else {
+            iter4.next().or_else(|| iter6.next())
+        };
+        next_is_v6 = !next_is_v6;
+        res
+    })
+}
+
 pub async fn each_addr<T>(
     addr: impl ToSocketAddrsAsync,
+    racing: bool,
     f: impl AsyncFn(SocketAddr) -> io::Result<T>,
 ) -> io::Result<T> {
     let addrs = addr.to_socket_addrs_async().await?;
+
+    let futs = if racing {
+        let futs: FuturesUnordered<_> = sort_addrs(addrs)
+            .into_iter()
+            .enumerate()
+            .map(async |(i, addr)| {
+                if i != 0 {
+                    sleep(HAPPY_EYEBALLS_STAGGER_DELAY * i as u32).await
+                }
+                f(addr).await
+            })
+            .collect();
+        EitherFut::Left(futs)
+    } else {
+        EitherFut::Right(stream::iter(addrs).then(async |addr| f(addr).await))
+    };
+    let mut futs = pin!(futs);
+
     let mut last_err = None;
-    for addr in addrs {
-        match f(addr).await {
-            Ok(l) => return Ok(l),
+    while let Some(res) = futs.next().await {
+        match res {
+            Ok(conn) => return Ok(conn),
             Err(e) => last_err = Some(e),
         }
     }
+
     Err(last_err.unwrap_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,

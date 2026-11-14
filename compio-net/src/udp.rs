@@ -103,7 +103,7 @@ pub struct UdpSocket {
 impl UdpSocket {
     /// Creates a new UDP socket and attempt to bind it to the addr provided.
     pub async fn bind(addr: impl ToSocketAddrsAsync) -> io::Result<Self> {
-        super::each_addr(addr, async |addr| {
+        super::each_addr(addr, false, async |addr| {
             let addr = SockAddr::from(addr);
             let socket = Socket::new(addr.domain(), Type::DGRAM, Some(Protocol::UDP)).await?;
             socket.bind(&addr).await?;
@@ -120,7 +120,10 @@ impl UdpSocket {
     /// that there is a remote server listening on the port, rather, such an
     /// error would only be detected after the first send.
     pub async fn connect(&self, addr: impl ToSocketAddrsAsync) -> io::Result<()> {
-        super::each_addr(addr, async |addr| self.inner.connect(&SockAddr::from(addr))).await
+        super::each_addr(addr, false, async |addr| {
+            self.inner.connect(&SockAddr::from(addr))
+        })
+        .await
     }
 
     /// Creates new UdpSocket from a std::net::UdpSocket.
