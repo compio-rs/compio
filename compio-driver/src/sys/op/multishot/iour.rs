@@ -58,6 +58,10 @@ unsafe impl<S: AsSocketState> OpCode for AcceptMulti<S> {
         self.op.create_entry(control)
     }
 
+    fn call_blocking(&mut self, control: &mut Self::Control) -> io::Result<usize> {
+        self.op.call_blocking(control)
+    }
+
     unsafe fn set_result(
         &mut self,
         control: &mut Self::Control,

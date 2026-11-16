@@ -479,6 +479,8 @@ pub(crate) struct Entry {
 
     #[cfg(io_uring)]
     flags: u32,
+    #[cfg(all(io_uring, feature = "io-uring-cqe32"))]
+    big_cqe: [u64; 2],
 }
 
 unsafe impl Send for Entry {}
@@ -496,6 +498,8 @@ impl Entry {
                 key,
                 result,
                 flags: 0,
+                #[cfg(feature = "io-uring-cqe32")]
+                big_cqe: [0; 2],
             }
         }
     }
@@ -520,9 +524,20 @@ impl Entry {
         self.flags = flags;
     }
 
+    #[cfg(all(io_uring, feature = "io-uring-cqe32"))]
+    pub(crate) fn set_big_cqe(&mut self, big_cqe: [u64; 2]) {
+        self.big_cqe = big_cqe;
+    }
+
     pub fn notify(self) {
         #[cfg(io_uring)]
-        self.key.borrow().extra_mut().set_flags(self.flags());
+        {
+            let mut op = self.key.borrow();
+            let extra = op.extra_mut();
+            extra.set_flags(self.flags());
+            #[cfg(feature = "io-uring-cqe32")]
+            extra.set_big_cqe(self.big_cqe);
+        }
         self.key.set_result(self.result);
     }
 }

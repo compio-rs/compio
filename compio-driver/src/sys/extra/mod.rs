@@ -96,6 +96,23 @@ impl Extra {
                 .buffer_id()
                 .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Buffer id was not set"));
 
+        /// Get the second half of the 32-byte CQE of this completion.
+        ///
+        /// Some operations return data there besides `res` and `flags`, e.g.
+        /// `IORING_OP_URING_CMD` and `IORING_OP_RECV_ZC`.
+        ///
+        /// # Behavior
+        ///
+        /// This is only supported on `io_uring` drivers built with the
+        /// `io-uring-cqe32` feature, whose ring is set up with
+        /// `IORING_SETUP_CQE32`. Otherwise, this will always return the
+        /// [`Unsupported`] error.
+        ///
+        /// [`Unsupported`]: io::ErrorKind::Unsupported
+        get fn big_cqe(&self) -> io::Result<[u64; 2]> =
+            |extra| extra
+                .big_cqe()
+                .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "32-byte CQEs are not enabled"));
 
         /// Get the personality for this operation.
         ///

@@ -26,13 +26,15 @@ impl<S: AsFd> OpenFile<S> {
     }
 
     pub(crate) fn call(&mut self, _: &mut ()) -> io::Result<usize> {
-        self.opened_fd = Some(openat(
+        let fd = openat(
             self.dirfd.as_fd(),
             &self.path,
             self.flags | OFlags::CLOEXEC,
             self.mode,
-        )?);
-        Ok(0)
+        )?;
+        let raw_fd = fd.as_raw_fd();
+        self.opened_fd = Some(fd);
+        Ok(raw_fd as _)
     }
 }
 
