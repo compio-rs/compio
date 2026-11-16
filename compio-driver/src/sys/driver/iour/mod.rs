@@ -379,6 +379,7 @@ impl Driver {
         Ok(())
     }
 
+    /// Returns true when some entries have been submitted to the kernel.
     fn push_entry(&mut self, entry: &SEntry) -> io::Result<bool> {
         let mut flushed = false;
         loop {
@@ -595,7 +596,7 @@ impl Driver {
     fn push_cancel_entry(&mut self, entry: SEntry) -> io::Result<()> {
         // Completions produced by a flush are reaped by the shutdown loop, so
         // there is nothing to do here beyond pushing the entry.
-        _ = self.push_entry(&entry)?;
+        self.push_entry(&entry)?;
         Ok(())
     }
 
