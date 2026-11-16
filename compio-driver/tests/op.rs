@@ -466,9 +466,7 @@ fn read_len_over_u32() {
     push_and_wait(&mut driver, op).unwrap();
 }
 
-/// Dropping a Proactor with in-flight ops must release them on the drivers that
-/// cancel on drop (io_uring, poll), and must leak them on IOCP, which cannot
-/// cancel on drop
+/// Dropping a Proactor must release in-flight ops.
 #[test]
 fn drop_with_inflight_ops() {
     use std::net::UdpSocket;
@@ -492,21 +490,7 @@ fn drop_with_inflight_ops() {
 
     drop(driver);
 
-    if cfg!(windows) {
-        // IOCP is a real proactor: dropping the port does not cancel a
-        // submitted op, so the kernel may still write into its buffer.
-        // Releasing the key or the fd would be a use-after-free, so the
-        // op is leaked on purpose.
-        assert!(
-            socket.try_unwrap().is_err(),
-            "IOCP must not release in-flight ops"
-        );
-    } else {
-        // io_uring closes the ring on drop, which makes the kernel cancel the
-        // op, and the poll driver owns its keys outright. Both must
-        // then release the op along with the fd clone it owned.
-        assert!(socket.try_unwrap().is_ok(), "in-flight op leaked on drop");
-    }
+    assert!(socket.try_unwrap().is_ok(), "in-flight op leaked on drop");
 }
 
 /// A multishot op stays registered across completions, so the completion queue

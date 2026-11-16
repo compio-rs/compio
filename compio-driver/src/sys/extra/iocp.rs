@@ -26,6 +26,10 @@ impl Extra {
 }
 
 impl super::Extra {
+    pub(crate) fn driver(&self) -> RawFd {
+        self.0.overlapped.driver
+    }
+
     pub(crate) fn optr(&mut self) -> *mut Overlapped {
         &mut self.0.overlapped as _
     }
