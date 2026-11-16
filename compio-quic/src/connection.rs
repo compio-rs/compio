@@ -228,9 +228,12 @@ impl ConnectionInner {
             };
 
             if let Some(mut buf) = send_buf.take() {
+                let mtu = state.conn.current_mtu() as usize;
                 if let Some(transmit) = state.conn.poll_transmit(
                     Instant::now(),
-                    self.socket.max_gso_segments(),
+                    // larger GSO batches than the max UDP payload over IPv4
+                    // fail with `EMSGSIZE`
+                    self.socket.max_gso_segments().min(65507 / mtu).max(1),
                     &mut buf,
                 ) {
                     transmit_fut.set(async move { self.socket.send(buf, &transmit).await }.fuse())
