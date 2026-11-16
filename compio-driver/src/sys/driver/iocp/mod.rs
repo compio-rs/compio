@@ -115,7 +115,7 @@ impl Driver {
                 let owned = std::ptr::eq(op.extra().driver(), self.port().as_raw_handle());
                 drop(op);
                 if res.is_pending() {
-                    let _ = key.into_raw();
+                    key.into_raw();
                     if owned {
                         self.in_flight.insert(optr);
                     }
