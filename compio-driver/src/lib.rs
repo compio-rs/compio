@@ -272,6 +272,47 @@ impl Proactor {
         }
     }
 
+    /// Submit single-shot operations as one linked io_uring chain.
+    ///
+    /// All operations must have the same type and produce native, single-shot
+    /// entries. Multishot operations are not supported. Each member except
+    /// the last is hard-linked when its `hardlinks` entry is true, otherwise
+    /// soft-linked; the last entry is ignored. Operations must not set their
+    /// own link or skip-completion flags.
+    ///
+    /// The complete chain is published together, without splitting it across
+    /// submissions. This does not make execution transactional: completed I/O
+    /// is not rolled back when a later member fails.
+    ///
+    /// Returns [`io::ErrorKind::Unsupported`] on non-io_uring backends, for
+    /// unsupported native entries, or if the chain exceeds the submission
+    /// queue's capacity. No blocking fallback is used. On rejection, no member
+    /// is submitted and all operations are returned.
+    pub fn push_linked<T: OpCode + 'static, const N: usize>(
+        &mut self,
+        ops: [T; N],
+        hardlinks: [bool; N],
+        extras: [Extra; N],
+    ) -> Result<[Key<T>; N], (io::Error, [T; N])> {
+        #[cfg(io_uring)]
+        if let Some(driver) = self.driver.as_iour_mut() {
+            let mut extras = extras.into_iter();
+            let keys = ops.map(|op| Key::new(op, extras.next().unwrap(), DriverType::IoUring));
+            match driver.push_linked(std::array::from_fn(|i| keys[i].clone().erase()), hardlinks) {
+                Ok(()) => return Ok(keys),
+                Err(error) => {
+                    let ops = keys.map(|key| {
+                        key.set_result(Err(error.kind().into()));
+                        key.take_result().1
+                    });
+                    return Err((error, ops));
+                }
+            }
+        }
+        let _ = (hardlinks, extras);
+        Err((io::ErrorKind::Unsupported.into(), ops))
+    }
+
     /// Flush the pushed operations to the kernel. It is roughly equivalent to
     /// calling [`poll`](Proactor::poll) with `Some(Duration::ZERO)` on
     /// io-uring, but is only needed if you're waiting on the driver fd with an
