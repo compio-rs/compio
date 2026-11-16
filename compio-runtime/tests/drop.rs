@@ -42,6 +42,65 @@ impl Drop for DropWatcher {
     }
 }
 
+/// Dropping the runtime must end every in-flight op: a receive left pending in
+/// the kernel would consume data sent afterwards and write it into the freed
+/// buffer. A duplicate of the driver fd (as a `fork` without `exec` leaves)
+/// keeps an io_uring ring alive after the runtime closes its own fd.
+#[cfg(unix)]
+#[test]
+fn test_drop_ends_pending_recv() {
+    use std::{
+        io::{Read, Write},
+        os::{
+            fd::{AsFd, AsRawFd, BorrowedFd},
+            unix::net::UnixStream,
+        },
+    };
+
+    use compio_driver::{AsSocketState, op::Recv};
+    use rustix::net::RecvFlags;
+
+    struct Socket(UnixStream);
+
+    impl AsFd for Socket {
+        fn as_fd(&self) -> BorrowedFd<'_> {
+            self.0.as_fd()
+        }
+    }
+
+    impl AsSocketState for Socket {}
+
+    let (mut local, mut peer) = UnixStream::pair().unwrap();
+    // The poll driver tries the receive inline: it must not block.
+    local.set_nonblocking(true).unwrap();
+    let rt = compio_runtime::Runtime::new().unwrap();
+    // SAFETY: the driver fd is open until `rt` is dropped.
+    let _ring = rustix::io::dup(unsafe { BorrowedFd::borrow_raw(rt.as_raw_fd()) }).unwrap();
+
+    let socket = Socket(local.try_clone().unwrap());
+    rt.block_on(async move {
+        compio_runtime::spawn(compio_runtime::submit(Recv::new(
+            socket,
+            Vec::with_capacity(64),
+            RecvFlags::empty(),
+        )))
+        .detach();
+        // Let the task push the receive, and the driver submit it.
+        compio_runtime::time::sleep(std::time::Duration::from_millis(10)).await;
+    });
+    drop(rt);
+
+    peer.write_all(b"x").unwrap();
+    let mut buf = [0; 1];
+    assert_eq!(
+        local
+            .read(&mut buf)
+            .expect("data consumed by a receive that outlived the runtime"),
+        1
+    );
+    assert_eq!(&buf, b"x");
+}
+
 #[test]
 fn test_drop_with_timer() {
     compio_runtime::Runtime::new().unwrap().block_on(async {

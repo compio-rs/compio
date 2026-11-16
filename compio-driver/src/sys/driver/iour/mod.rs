@@ -1,5 +1,8 @@
 use std::{
-    marker::PhantomData, mem::ManuallyDrop, panic::AssertUnwindSafe, sync::Arc, time::Duration,
+    marker::PhantomData,
+    panic::AssertUnwindSafe,
+    sync::Arc,
+    time::{Duration, Instant},
 };
 
 use crate::sys::{extra::IourExtra, prelude::*};
@@ -58,23 +61,24 @@ bitflags::bitflags! {
 
 /// Low-level driver of io-uring.
 pub(crate) struct Driver {
-    // Wrapped in `ManuallyDrop` so that `Drop` can close the ring *before*
-    // releasing the in-flight keys. Closing the io_uring fd makes the kernel
-    // wait for or cancel any in-flight ops, which guarantees the kernel is no
-    // longer reading from or writing to the buffers owned by those keys.
-    inner: ManuallyDrop<IoUring<SEntry, CEntry>>,
+    inner: IoUring<SEntry, CEntry>,
     notifier: Notifier,
     pool: AsyncifyPool,
     completed_tx: Sender<Entry>,
     completed_rx: Receiver<Entry>,
     flags: DriverFlags,
-    /// Keys leaked via `into_raw()` into io_uring user_data, freed on drop.
+    /// Keys leaked via `into_raw()` into io_uring user_data. A key is taken
+    /// back only on its final CQE; [`Driver::drain`] reaps them on teardown,
+    /// and any key left at drop stays leaked.
     in_flight: SlotMap<DefaultKey, usize>,
     _p: PhantomData<ErasedKey>,
 }
 
 impl Driver {
     const CANCEL: u64 = u64::MAX;
+    /// How long [`Driver::drain`] waits for in-flight ops on teardown. Drop
+    /// blocks for up to this long, also while unwinding from a panic.
+    const DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
     const NOTIFY: u64 = u64::MAX - 1;
 
     pub fn new(builder: &ProactorBuilder) -> io::Result<Self> {
@@ -134,7 +138,7 @@ impl Driver {
         );
 
         Ok(Self {
-            inner: ManuallyDrop::new(inner),
+            inner,
             notifier,
             completed_tx,
             completed_rx,
@@ -326,22 +330,21 @@ impl Driver {
     pub fn cancel(&mut self, key: ErasedKey) {
         instrument!(compio_log::Level::TRACE, "cancel", ?key);
         trace!("cancel RawOp");
-        unsafe {
-            #[allow(clippy::useless_conversion)]
-            if self
-                .inner
-                .submission()
-                .push(
-                    &AsyncCancel::new(key.as_raw() as _)
-                        .build()
-                        .user_data(Self::CANCEL)
-                        .into(),
-                )
-                .is_err()
-            {
-                warn!("could not push AsyncCancel entry");
-            }
+        if !self.push_cancel(key.as_raw()) {
+            warn!("could not push AsyncCancel entry");
         }
+    }
+
+    /// Queue an `AsyncCancel` for the op with `user_data`. Returns `false` if
+    /// the SQ is full.
+    fn push_cancel(&mut self, user_data: usize) -> bool {
+        #[allow(clippy::useless_conversion)]
+        let entry: SEntry = AsyncCancel::new(user_data as _)
+            .build()
+            .user_data(Self::CANCEL)
+            .into();
+        // SAFETY: an `AsyncCancel` SQE references no memory.
+        unsafe { self.inner.submission().push(&entry) }.is_ok()
     }
 
     fn push_raw_with_key(&mut self, entry: SEntry, key: ErasedKey) -> io::Result<()> {
@@ -494,6 +497,71 @@ impl Driver {
         key.borrow().carrier.pop_multishot()
     }
 
+    /// Cancel every in-flight op and reap CQEs until each op's final CQE is
+    /// seen, for at most [`Self::DRAIN_TIMEOUT`]. Returns whether no op is left
+    /// in flight.
+    ///
+    /// Closing the ring does not end an op: released kernels cancel in-flight
+    /// ops asynchronously after `close`, and a duplicated ring fd (e.g. from a
+    /// `fork`) keeps them running. The final CQE is the only proof the kernel
+    /// is done with an op's buffers, so the keys of ops still in flight after
+    /// the timeout stay leaked.
+    ///
+    /// Reaped keys are dropped without delivering their result: this runs on
+    /// teardown, where waking futures is not safe.
+    pub fn drain(&mut self) -> bool {
+        let deadline = Instant::now() + Self::DRAIN_TIMEOUT;
+        let mut to_cancel = self.in_flight.values().copied().collect::<Vec<_>>();
+        while !self.in_flight.is_empty() {
+            // On a full SQ, the rest is submitted below, then retried.
+            while let Some(&user_data) = to_cancel.last()
+                && self.push_cancel(user_data)
+            {
+                to_cancel.pop();
+            }
+
+            let timeout = deadline.saturating_duration_since(Instant::now());
+            if timeout.is_zero() {
+                break;
+            }
+            // Do not wait while cancels are still queued: the SQEs filling the
+            // SQ may never complete on their own.
+            let want = usize::from(to_cancel.is_empty());
+            match self.submit_and_wait(want, Some(timeout)) {
+                Ok(_) => {}
+                Err(e)
+                    if matches!(
+                        e.raw_os_error(),
+                        Some(libc::ETIME | libc::EINTR | libc::EBUSY | libc::EAGAIN)
+                    ) => {}
+                Err(e) => {
+                    error!("failed to drain io_uring: {e:?}");
+                    break;
+                }
+            }
+
+            for entry in self.inner.completion() {
+                let user_data = entry.user_data();
+                if matches!(user_data, Self::CANCEL | Self::NOTIFY) || more(entry.flags()) {
+                    continue;
+                }
+                // SAFETY: a final CQE hands back the reference leaked by
+                // `push_raw_with_key`.
+                let key = unsafe { ErasedKey::from_raw(user_data as _) };
+                Self::remove_in_flight(&mut self.in_flight, &key);
+            }
+        }
+
+        if !self.in_flight.is_empty() {
+            warn!(
+                "leaking {} io_uring ops still in flight after {:?}",
+                self.in_flight.len(),
+                Self::DRAIN_TIMEOUT
+            );
+        }
+        self.in_flight.is_empty()
+    }
+
     /// Take an op out of the `in_flight` map. The slot lives in the op's
     /// extra, and is only set while the op is in flight.
     fn remove_in_flight(in_flight: &mut SlotMap<DefaultKey, usize>, key: &ErasedKey) {
@@ -508,28 +576,6 @@ impl Driver {
 impl AsRawFd for Driver {
     fn as_raw_fd(&self) -> RawFd {
         self.inner.as_raw_fd()
-    }
-}
-
-impl Drop for Driver {
-    fn drop(&mut self) {
-        // Close the io_uring ring *before* freeing the in-flight keys.
-        // Closing the ring fd makes the kernel wait for in-flight ops to
-        // finish or be cancelled, so it will no longer read from or write to
-        // the buffers owned by those keys. Without this, the kernel could
-        // touch a freed (and potentially recycled) heap allocation, which
-        // corrupts the glibc heap and typically surfaces as
-        // `malloc_consolidate(): unaligned fastbin chunk detected` /
-        // `corrupted double-linked list` during thread shutdown.
-        unsafe { ManuallyDrop::drop(&mut self.inner) };
-
-        // `in_flight` holds one reference per submitted op: `push_raw_with_key`
-        // leaks it, and `poll_entries` takes it back when it hands the op to
-        // its future. Whatever is left here is ours to free, and the kernel is
-        // done with it.
-        for (_, user_data) in self.in_flight.drain() {
-            drop(unsafe { ErasedKey::from_raw(user_data) });
-        }
     }
 }
 
