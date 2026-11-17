@@ -69,7 +69,7 @@ libc = "0.2.175"
 mod_use = "0.2.3"
 native-tls = "0.2.13"
 compio-py-dynamic-openssl = "0.5.0"
-nix = "0.31.1"
+nix = "0.32.0"
 once_cell = "1.18.0"
 paste = { package = "pastey", version = "0.2.1" }
 pin-project-lite = "0.2.16"
