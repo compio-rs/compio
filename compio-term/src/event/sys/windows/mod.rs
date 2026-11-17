@@ -1,6 +1,6 @@
 use std::{
     future::Future,
-    io,
+    io::{self, IsTerminal},
     os::windows::io::{AsRawHandle, RawHandle},
     pin::Pin,
     task::{Context, Poll},
@@ -11,7 +11,7 @@ use compio_driver::{OpCode, OpType};
 use compio_runtime::{Runtime, Submit};
 use futures_core::Stream;
 use windows_sys::Win32::System::Console::{
-    GetConsoleMode, GetNumberOfConsoleInputEvents, INPUT_RECORD, ReadConsoleInputW,
+    GetNumberOfConsoleInputEvents, INPUT_RECORD, ReadConsoleInputW,
 };
 
 use self::parse::Parser;
@@ -33,11 +33,14 @@ impl EventSource {
             ));
         }
 
-        let handle = io::stdin().as_raw_handle();
-        let mut mode = 0;
-        if unsafe { GetConsoleMode(handle, &mut mode) } == 0 {
-            return Err(io::Error::last_os_error());
+        let stdin = io::stdin();
+        if !stdin.is_terminal() {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "stdin is not a terminal",
+            ));
         }
+        let handle = stdin.as_raw_handle();
 
         Ok(Self {
             handle,
