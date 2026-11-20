@@ -54,16 +54,11 @@ impl<C: ?Sized> RawOp<C> {
             w.wake_by_ref();
         }
     }
-}
 
-#[cfg(io_uring)]
-impl<C: crate::Carry + ?Sized> RawOp<C> {
-    pub fn create_entry<const FALLBACK: bool>(&mut self) -> crate::OpEntry {
-        if FALLBACK {
-            self.carrier.create_entry_fallback().with_extra(&self.extra)
-        } else {
-            self.carrier.create_entry().with_extra(&self.extra)
-        }
+    /// Borrow `extra` and `carrier` at the same time.
+    #[cfg(io_uring)]
+    pub fn extra_and_carrier_mut(&mut self) -> (&Extra, &mut C) {
+        (&self.extra, &mut self.carrier)
     }
 }
 

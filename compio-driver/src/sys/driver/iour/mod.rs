@@ -16,10 +16,10 @@ cfg_select! {
 
 cfg_select! {
     feature = "io-uring-sqe128" => {
-        use io_uring::squeue::Entry128 as SEntry;
+        pub(crate) use io_uring::squeue::Entry128 as SEntry;
     }
     _ => {
-        use io_uring::squeue::Entry as SEntry;
+        pub(crate) use io_uring::squeue::Entry as SEntry;
     }
 }
 
@@ -368,17 +368,6 @@ impl Driver {
         }
     }
 
-    fn push_raw_with_key(&mut self, entry: SEntry, key: ErasedKey) -> io::Result<()> {
-        let user_data = key.as_raw();
-        let entry = entry.user_data(user_data as _);
-        self.push_raw(entry)?; // if push failed, do not leak the key. Drop it upon return.
-
-        let slot = self.in_flight.insert(user_data);
-        key.borrow().extra_mut().as_iour_mut().set_in_flight(slot);
-        key.into_raw();
-        Ok(())
-    }
-
     /// Returns true when some entries have been submitted to the kernel.
     fn push_entry(&mut self, entry: &SEntry) -> io::Result<bool> {
         let mut flushed = false;
@@ -419,39 +408,25 @@ impl Driver {
 
     pub fn push(&mut self, key: ErasedKey) -> Poll<io::Result<usize>> {
         instrument!(compio_log::Level::TRACE, "push", ?key);
-        let mut op_entry = key.borrow().create_entry::<false>();
-        let mut has_fallbacked = false;
-        loop {
-            trace!(fallback = has_fallbacked, "push entry");
-            match op_entry {
-                OpEntry::Submission(entry) => {
-                    if is_op_supported(entry.get_opcode() as _) {
-                        #[allow(clippy::useless_conversion)]
-                        self.push_raw_with_key(entry.into(), key)?;
-                    } else if !has_fallbacked {
-                        op_entry = key.borrow().create_entry::<true>();
-                        has_fallbacked = true;
-                        continue;
-                    } else {
-                        self.push_blocking(key);
-                    }
-                }
-                #[cfg(feature = "io-uring-sqe128")]
-                OpEntry::Submission128(entry) => {
-                    if is_op_supported(entry.get_opcode() as _) {
-                        self.push_raw_with_key(entry, key)?;
-                    } else if !has_fallbacked {
-                        op_entry = key.borrow().create_entry::<true>();
-                        has_fallbacked = true;
-                        continue;
-                    } else {
-                        self.push_blocking(key);
-                    }
-                }
-                OpEntry::Blocking => self.push_blocking(key),
+        let user_data = key.as_raw();
+        let pushed = {
+            let mut op = key.borrow();
+            let (extra, carrier) = op.extra_and_carrier_mut();
+            carrier.push_into(extra, user_data as _, &mut self.inner.submission())
+        };
+        match pushed {
+            Pushed::Done => {}
+            // Not a hot path: submit to make room, then push again. On
+            // error the key drops here instead of leaking.
+            Pushed::Full(entry) => self.push_raw(entry)?,
+            Pushed::Blocking => {
+                self.push_blocking(key);
+                return Poll::Pending;
             }
-            break;
         }
+        let slot = self.in_flight.insert(user_data);
+        key.borrow().extra_mut().as_iour_mut().set_in_flight(slot);
+        key.into_raw();
         Poll::Pending
     }
 
