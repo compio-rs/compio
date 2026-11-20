@@ -73,6 +73,7 @@ rustix = { workspace = true, features = ["fs", "pipe"] }
 
 [dev-dependencies]
 nix = { workspace = true, features = ["mman"] }
+criterion = { workspace = true }
 
 [build-dependencies]
 cfg_aliases = { workspace = true }
@@ -105,3 +106,7 @@ nightly = ["once_cell_try", "proc_macro_diagnostic"]
 
 [[test]]
 name = "buffer_pool"
+
+[[bench]]
+name = "submit"
+harness = false
