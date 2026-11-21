@@ -139,6 +139,32 @@ fn buffer_pool_managed_read() {
     drop(buffer);
 }
 
+/// Recycles buffers through the io_uring buffer ring until its `u16` tail
+/// wraps around.
+#[cfg(target_os = "linux")]
+#[test]
+fn buffer_pool_ring_tail_wraps() {
+    let mut driver = ProactorBuilder::new()
+        .buffer_pool_size(NonZeroU16::new(4).unwrap())
+        .build()
+        .unwrap();
+    if !driver.driver_type().is_iouring() {
+        return;
+    }
+
+    let fd = SharedFd::new(std::fs::File::open("Cargo.toml").unwrap());
+    let pool = driver.buffer_pool().unwrap();
+
+    for i in 0..=u32::from(u16::MAX) + 8 {
+        let op = ReadManagedAt::new(fd.clone(), 0, &pool, 16).unwrap();
+        let res = push_and_wait(&mut driver, op);
+        let buffer = unsafe { res.take_buffer() }
+            .unwrap()
+            .unwrap_or_else(|| panic!("no buffer at iteration {i}"));
+        assert!(buffer.starts_with(b"[package]"), "iteration {i}");
+    }
+}
+
 #[cfg(any(not(target_os = "linux"), feature = "polling"))]
 #[test]
 fn buffer_pool_buffer_capacity() {
