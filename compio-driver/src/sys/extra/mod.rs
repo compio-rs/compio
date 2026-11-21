@@ -52,6 +52,16 @@ impl Extra {
         driver.default_extra().into()
     }
 
+    /// Whether this was created for a driver of type `driver`. Only the fusion
+    /// driver has more than one type, so it is the only one that can mismatch.
+    #[allow(unused_variables)]
+    pub(crate) fn is_for(&self, driver: crate::DriverType) -> bool {
+        cfg_select! {
+            fusion => self.is_iour() == driver.is_iouring(),
+            _ => true,
+        }
+    }
+
     /// Update the state of `socket` from this completion.
     #[allow(unused_variables)]
     pub fn update_socket_state(&self, socket: &impl crate::AsSocketState) {
