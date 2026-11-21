@@ -1,12 +1,13 @@
 use std::{
     collections::{HashMap, VecDeque},
-    num::NonZeroUsize,
     panic::AssertUnwindSafe,
     sync::Arc,
 };
 
 use flume::{Receiver, Sender};
-use polling::{Event, Events, Poller};
+use polling::Event;
+
+use crate::reactor::{Notifier, OsReactor, Reactor};
 
 mod op;
 pub use op::*;
@@ -123,7 +124,8 @@ impl FdQueue {
 
 /// Low-level driver of polling.
 pub(crate) struct Driver {
-    events: Events,
+    events: Vec<Event>,
+    reactor: Box<dyn Reactor>,
     notify: Arc<Notify>,
     registry: HashMap<RawFd, FdQueue>,
     pool: AsyncifyPool,
@@ -136,17 +138,18 @@ impl Driver {
         instrument!(compio_log::Level::TRACE, "new", ?builder);
         trace!("new poll driver");
 
-        let events = if let Some(cap) = NonZeroUsize::new(builder.capacity as _) {
-            Events::with_capacity(cap)
-        } else {
-            Events::new()
+        let reactor: Box<dyn Reactor> = match &builder.reactor_factory {
+            Some(factory) => (factory.0)()?,
+            None => Box::new(OsReactor::new(builder.capacity)?),
         };
-        let poll = Poller::new()?;
-        let notify = Arc::new(Notify::new(poll));
+
+        let events = Vec::with_capacity(builder.capacity as _);
+        let notify = Arc::new(Notify::new(reactor.notifier()));
         let (completed_tx, completed_rx) = flume::unbounded();
 
         Ok(Self {
             events,
+            reactor,
             notify,
             registry: HashMap::new(),
             pool: builder.create_or_get_thread_pool(),
@@ -163,13 +166,13 @@ impl Driver {
         PollExtra::new()
     }
 
-    fn poller(&self) -> &Poller {
-        &self.notify.poll
+    fn poller(&self) -> &dyn Reactor {
+        &*self.reactor
     }
 
     fn with_events<F, R>(&mut self, f: F) -> R
     where
-        F: FnOnce(&mut Self, &mut Events) -> R,
+        F: FnOnce(&mut Self, &mut Vec<Event>) -> R,
     {
         let mut events = std::mem::take(&mut self.events);
         let res = f(self, &mut events);
@@ -193,7 +196,7 @@ impl Driver {
     /// The input fd should be valid.
     unsafe fn submit(&mut self, key: ErasedKey, arg: WaitArg) -> io::Result<()> {
         let Self {
-            registry, notify, ..
+            registry, reactor, ..
         } = self;
         let need_add = !registry.contains_key(&arg.fd);
         let queue = registry.entry(arg.fd).or_default();
@@ -201,10 +204,10 @@ impl Driver {
         let event = queue.event();
         let res = if need_add {
             // SAFETY: the events are deleted correctly.
-            unsafe { notify.poll.add(arg.fd, event) }
+            unsafe { reactor.add(arg.fd, event) }
         } else {
             let fd = unsafe { BorrowedFd::borrow_raw(arg.fd) };
-            notify.poll.modify(fd, event)
+            reactor.modify(fd, event)
         };
         if res.is_err() {
             // Rollback the push if submission failed.
@@ -454,7 +457,7 @@ impl Driver {
         // We need to poll the poller first to make sure it handles the internal
         // notify event (if any).
         self.events.clear();
-        self.notify.poll.wait(&mut self.events, timeout)?;
+        self.reactor.wait(&mut self.events, timeout)?;
         self.notify.set_awake();
         if self.events.is_empty() {
             if self.poll_completed() {
@@ -467,7 +470,7 @@ impl Driver {
             self.poll_completed();
         }
         self.with_events(|this, events| {
-            for event in events.iter() {
+            for &event in events.iter() {
                 trace!("receive {} for {:?}", event.key, event);
                 // SAFETY: user_data is promised to be valid.
                 let key = unsafe { BorrowedKey::from_raw(event.key) };
@@ -548,14 +551,14 @@ impl Entry {
 
 /// A notify handle to the inner driver.
 pub(crate) struct Notify {
-    poll: Poller,
+    notifier: Box<dyn Notifier>,
     awake: AwakeFlag,
 }
 
 impl Notify {
-    fn new(poll: Poller) -> Self {
+    fn new(notifier: Box<dyn Notifier>) -> Self {
         Self {
-            poll,
+            notifier,
             awake: AwakeFlag::new(),
         }
     }
@@ -576,7 +579,7 @@ impl Wake for Notify {
 
     fn wake_by_ref(self: &Arc<Self>) {
         if !self.awake.wake() {
-            self.poll.notify().ok();
+            self.notifier.notify().ok();
         }
     }
 }

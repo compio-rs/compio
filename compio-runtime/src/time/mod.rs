@@ -13,6 +13,31 @@ pub(crate) use runtime::TimerRuntime;
 mod future;
 pub use future::{Interval, Sleep, Timeout};
 
+/// A source of monotonic time for a [`Runtime`](crate::Runtime)'s timers.
+///
+/// Install one with [`RuntimeBuilder::clock`](crate::RuntimeBuilder::clock),
+/// for example to run timers on a virtual clock in tests. Without one the
+/// runtime uses [`Instant::now`].
+pub trait Clock: Send + Sync + 'static {
+    /// The current instant.
+    fn now(&self) -> Instant;
+}
+
+#[derive(Clone)]
+pub(crate) struct ClockHandle(pub(crate) std::sync::Arc<dyn Clock>);
+
+impl std::fmt::Debug for ClockHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Clock")
+    }
+}
+
+/// The current instant on the current runtime's clock, or [`Instant::now`]
+/// outside a runtime.
+pub fn now() -> Instant {
+    crate::Runtime::try_with_current(|rt| rt.now()).unwrap_or_else(|_| Instant::now())
+}
+
 /// Error returned by [`timeout`] or [`timeout_at`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Elapsed(());
@@ -51,7 +76,7 @@ impl Error for Elapsed {}
 ///
 /// Panic if not running under a `Runtime`.
 pub fn sleep(duration: Duration) -> Sleep {
-    Sleep::new(Instant::now() + duration)
+    Sleep::new(now() + duration)
 }
 
 /// Waits until `deadline` is reached.
@@ -90,7 +115,7 @@ pub fn sleep_until(deadline: Instant) -> Sleep {
 ///
 /// Panic if not running under a `Runtime`.
 pub fn timeout<F: Future>(duration: Duration, future: F) -> Timeout<F> {
-    Timeout::new(Instant::now() + duration, future)
+    Timeout::new(now() + duration, future)
 }
 
 /// Require a [`Future`] to complete before the specified instant in time.
@@ -169,7 +194,7 @@ pub fn timeout_at<F: Future>(deadline: Instant, future: F) -> Timeout<F> {
 /// [`sleep`]: crate::time::sleep()
 /// [`.tick().await`]: Interval::tick
 pub fn interval(period: Duration) -> Interval {
-    interval_at(Instant::now(), period)
+    interval_at(now(), period)
 }
 
 /// Creates new [`Interval`] that yields with interval of `period` with the
@@ -207,7 +232,7 @@ pub fn interval_at(start: Instant, period: Duration) -> Interval {
 
 #[test]
 fn timer_min_timeout() {
-    let mut runtime = TimerRuntime::new();
+    let mut runtime = TimerRuntime::new(None);
     assert_eq!(runtime.min_timeout(), None);
 
     let now = Instant::now();

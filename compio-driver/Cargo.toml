@@ -72,6 +72,7 @@ libc = { workspace = true }
 rustix = { workspace = true, features = ["fs", "pipe"] }
 
 [dev-dependencies]
+criterion = { workspace = true }
 nix = { workspace = true, features = ["mman"] }
 
 [build-dependencies]
@@ -105,3 +106,8 @@ nightly = ["once_cell_try", "proc_macro_diagnostic"]
 
 [[test]]
 name = "buffer_pool"
+
+[[bench]]
+name = "reactor"
+harness = false
+required-features = ["polling"]
