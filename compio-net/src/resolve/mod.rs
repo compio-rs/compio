@@ -11,13 +11,22 @@ cfg_select! {
 }
 
 use std::{
+    cell::RefCell,
     future::{Future, Ready, ready},
     io,
+    iter::from_fn,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
+    pin::pin,
+    time::Duration,
 };
 
 use compio_buf::{BufResult, buf_try};
+use compio_runtime::time::sleep;
 use either::Either;
+use futures_util::{
+    FutureExt, Stream, StreamExt, select,
+    stream::{self, FuturesUnordered},
+};
 pub use sys::resolve_sock_addrs;
 
 /// A trait for objects which can be converted or resolved to one or more
@@ -132,24 +141,64 @@ impl<T: ToSocketAddrsAsync + ?Sized> ToSocketAddrsAsync for &T {
     }
 }
 
+static HAPPY_EYEBALLS_STAGGER_DELAY: Duration = Duration::from_millis(200);
+
+fn sort_addrs(addrs: impl IntoIterator<Item = SocketAddr>) -> impl Iterator<Item = SocketAddr> {
+    let (v6, v4): (Vec<_>, Vec<_>) = addrs.into_iter().partition(SocketAddr::is_ipv6);
+    let (mut iter6, mut iter4) = (v6.into_iter(), v4.into_iter());
+    let mut next_is_v6 = true;
+
+    from_fn(move || {
+        let res = if next_is_v6 {
+            iter6.next().or_else(|| iter4.next())
+        } else {
+            iter4.next().or_else(|| iter6.next())
+        };
+        next_is_v6 = !next_is_v6;
+        res
+    })
+}
+
 pub async fn each_addr<T>(
     addr: impl ToSocketAddrsAsync,
+    racing: bool,
     f: impl AsyncFn(SocketAddr) -> io::Result<T>,
 ) -> io::Result<T> {
     let addrs = addr.to_socket_addrs_async().await?;
-    let mut last_err = None;
-    for addr in addrs {
-        match f(addr).await {
-            Ok(l) => return Ok(l),
-            Err(e) => last_err = Some(e),
+
+    async fn applier<T>(stream: impl Stream<Item = io::Result<T>>) -> io::Result<T> {
+        let mut last_err = None;
+        let mut stream = pin!(stream);
+        while let Some(res) = stream.next().await {
+            match res {
+                Ok(conn) => return Ok(conn),
+                Err(e) => last_err = Some(e),
+            }
         }
+
+        Err(last_err.unwrap_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "could not resolve to any addresses",
+            )
+        }))
     }
-    Err(last_err.unwrap_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "could not resolve to any addresses",
-        )
-    }))
+
+    if racing {
+        let futs = RefCell::new(FuturesUnordered::new());
+        let stagger = stream::iter(sort_addrs(addrs)).filter_map(async |addr| {
+            futs.borrow().push(f(addr));
+            select! {
+                res = std::future::poll_fn(|cx| futs.borrow_mut().poll_next_unpin(cx)).fuse() => res,
+                _ = sleep(HAPPY_EYEBALLS_STAGGER_DELAY).fuse() => None,
+            }
+        });
+
+        let drain = stream::poll_fn(|cx| futs.borrow_mut().poll_next_unpin(cx));
+        applier(stagger.chain(drain)).await
+    } else {
+        applier(stream::iter(addrs).then(|addr| f(addr))).await
+    }
 }
 
 pub async fn first_addr_buf<T, B>(
