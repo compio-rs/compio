@@ -6,7 +6,7 @@ use std::{
     sync::atomic::Ordering,
 };
 
-use io_uring::types::BufRingEntry;
+use io_uring::types::{BufRingEntry, IOU_PBUF_RING_INC};
 use rustix::mm::{MapFlags, ProtFlags, mmap_anonymous, munmap};
 use synchrony::unsync::atomic::AtomicU16;
 
@@ -45,6 +45,18 @@ impl BufControl {
         flags: u16,
     ) -> io::Result<Self> {
         debug_assert!(bufs.len().is_power_of_two());
+
+        // The pool hands out every completion from the start of its buffer and
+        // gives the buffer back to the ring once it is dropped, which is only
+        // sound when each completion uses the whole buffer. On a ring that
+        // consumes buffers incrementally, the kernel keeps a buffer reported
+        // with `IORING_CQE_F_BUF_MORE` and keeps writing into it.
+        if flags & IOU_PBUF_RING_INC as u16 != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "the buffer pool does not support IOU_PBUF_RING_INC",
+            ));
+        }
 
         let driver = driver.as_iour_mut().expect("Should be iour");
 

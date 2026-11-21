@@ -66,6 +66,10 @@ impl Extra {
         io_uring::cqueue::buffer_select(self.cqe_flags)
     }
 
+    pub fn buffer_more(&self) -> bool {
+        io_uring::cqueue::buffer_more(self.cqe_flags)
+    }
+
     pub fn sock_nonempty(&self) -> bool {
         io_uring::cqueue::sock_nonempty(self.cqe_flags)
     }
