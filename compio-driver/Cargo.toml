@@ -73,6 +73,11 @@ rustix = { workspace = true, features = ["fs", "pipe"] }
 
 [dev-dependencies]
 nix = { workspace = true, features = ["mman"] }
+criterion = { workspace = true }
+
+[[bench]]
+name = "submit"
+harness = false
 
 [build-dependencies]
 cfg_aliases = { workspace = true }
