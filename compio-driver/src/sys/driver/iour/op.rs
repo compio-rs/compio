@@ -2,6 +2,7 @@ use std::io;
 
 pub use OpCode as IourOpCode;
 use compio_buf::BufResult;
+use compio_log::trace;
 
 use crate::control::Carrier;
 
@@ -96,37 +97,86 @@ pub unsafe trait OpCode {
     }
 }
 
-impl OpEntry {
-    pub(crate) fn with_extra(self, extra: &crate::Extra) -> Self {
-        let Some(extra) = extra.try_as_iour() else {
-            return self;
-        };
-        match self {
-            Self::Submission(mut entry) => Self::Submission({
-                if let Some(personality) = extra.get_personality() {
-                    entry = entry.personality(personality);
-                }
-                // Set the union of two flags - it will not remove previous flags set by the Op
-                entry.flags(extra.get_sqe_flags())
-            }),
-            #[cfg(feature = "io-uring-sqe128")]
-            Self::Submission128(mut entry) => Self::Submission128({
-                if let Some(personality) = extra.get_personality() {
-                    entry = entry.personality(personality);
-                }
-                entry.flags(extra.get_sqe_flags())
-            }),
-            Self::Blocking => Self::Blocking,
+fn push_se(
+    mut entry: super::SEntry,
+    extra: &crate::Extra,
+    user_data: u64,
+    sq: &mut io_uring::squeue::SubmissionQueue<'_, super::SEntry>,
+) -> Pushed {
+    if let Some(extra) = extra.try_as_iour() {
+        if let Some(personality) = extra.get_personality() {
+            entry = entry.personality(personality);
         }
+        // Set the union of two flags - it will not remove previous flags set by the Op
+        entry = entry.flags(extra.get_sqe_flags());
+    }
+    let entry = entry.user_data(user_data);
+    // SAFETY: the op lives in the `Key` until its completion is reaped.
+    match unsafe { sq.push(&entry) } {
+        Ok(()) => Pushed::Done,
+        Err(_) => Pushed::Full(entry),
     }
 }
 
-pub(crate) trait Carry {
-    /// See [`OpCode::create_entry`].
-    fn create_entry(&mut self) -> OpEntry;
+/// Push `entry` into `sq` if the kernel supports its opcode, otherwise call
+/// `unsupported`.
+fn push_op_entry(
+    entry: OpEntry,
+    extra: &crate::Extra,
+    user_data: u64,
+    sq: &mut io_uring::squeue::SubmissionQueue<'_, super::SEntry>,
+    unsupported: impl FnOnce(&mut io_uring::squeue::SubmissionQueue<'_, super::SEntry>) -> Pushed,
+) -> Pushed {
+    let entry: super::SEntry = match entry {
+        #[allow(clippy::useless_conversion)]
+        OpEntry::Submission(e) => e.into(),
+        #[cfg(feature = "io-uring-sqe128")]
+        OpEntry::Submission128(e) => e,
+        OpEntry::Blocking => return Pushed::Blocking,
+    };
+    if crate::sys::is_op_supported(entry.get_opcode() as _) {
+        push_se(entry, extra, user_data, sq)
+    } else {
+        unsupported(sq)
+    }
+}
 
-    /// See [`OpCode::create_entry_fallback`].
-    fn create_entry_fallback(&mut self) -> OpEntry;
+/// The opcode from [`OpCode::create_entry`] is unsupported by the kernel;
+/// retry with [`OpCode::create_entry_fallback`].
+#[cold]
+#[inline(never)]
+fn push_fallback<T: crate::OpCode>(
+    op: &mut T,
+    control: &mut <T as OpCode>::Control,
+    extra: &crate::Extra,
+    user_data: u64,
+    sq: &mut io_uring::squeue::SubmissionQueue<'_, super::SEntry>,
+) -> Pushed {
+    trace!(fallback = true, "push entry");
+    let entry = op.create_entry_fallback(control);
+    push_op_entry(entry, extra, user_data, sq, |_| Pushed::Blocking)
+}
+
+/// Outcome of [`Carry::push_into`].
+pub(crate) enum Pushed {
+    /// The entry is in the submission queue.
+    Done,
+    /// The submission queue is full; the ready entry is handed back.
+    Full(super::SEntry),
+    /// The op wants to run on the blocking pool.
+    Blocking,
+}
+
+pub(crate) trait Carry {
+    /// Create the entry (falling back to [`OpCode::create_entry_fallback`] if
+    /// the opcode is unsupported), apply `extra` and `user_data`, and push it
+    /// into `sq`.
+    fn push_into(
+        &mut self,
+        extra: &crate::Extra,
+        user_data: u64,
+        sq: &mut io_uring::squeue::SubmissionQueue<'_, super::SEntry>,
+    ) -> Pushed;
 
     /// See [`OpCode::call_blocking`].
     fn call_blocking(&mut self) -> io::Result<usize>;
@@ -142,14 +192,18 @@ pub(crate) trait Carry {
 }
 
 impl<T: crate::OpCode> Carry for Carrier<T> {
-    fn create_entry(&mut self) -> OpEntry {
+    fn push_into(
+        &mut self,
+        extra: &crate::Extra,
+        user_data: u64,
+        sq: &mut io_uring::squeue::SubmissionQueue<'_, super::SEntry>,
+    ) -> Pushed {
         let (op, control) = self.as_iour();
-        op.create_entry(control)
-    }
-
-    fn create_entry_fallback(&mut self) -> OpEntry {
-        let (op, control) = self.as_iour();
-        op.create_entry_fallback(control)
+        trace!(fallback = false, "push entry");
+        let entry = op.create_entry(control);
+        push_op_entry(entry, extra, user_data, sq, |sq| {
+            push_fallback(op, control, extra, user_data, sq)
+        })
     }
 
     fn call_blocking(&mut self) -> io::Result<usize> {
