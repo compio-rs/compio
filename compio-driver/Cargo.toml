@@ -109,4 +109,5 @@ name = "buffer_pool"
 
 [[bench]]
 name = "submit"
+required-features = ["io-uring"]
 harness = false
