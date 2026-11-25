@@ -88,9 +88,15 @@ impl FdQueue {
         RemoveToken { idx: 0, is_read }
     }
 
-    pub fn remove(&mut self, key: &ErasedKey) {
+    /// Remove all the interests of `key`.
+    ///
+    /// Returns whether any interest of `key` was in the queue.
+    pub fn remove(&mut self, key: &ErasedKey) -> bool {
+        let read_len = self.read_queue.len();
+        let write_len = self.write_queue.len();
         self.read_queue.retain(|k| k != key);
         self.write_queue.retain(|k| k != key);
+        read_len != self.read_queue.len() || write_len != self.write_queue.len()
     }
 
     pub fn event(&self) -> Event {
@@ -119,6 +125,32 @@ impl FdQueue {
         }
         None
     }
+}
+
+/// Whether the error returned when registering an fd means that the fd cannot
+/// be monitored for readiness at all, instead of the registration being
+/// transiently or structurally broken.
+///
+/// * `epoll` reports `EPERM` when the target file does not implement `poll`,
+///   which is the case for regular files, directories and `/dev/null`.
+/// * `kqueue` reports `EINVAL` through `EV_ERROR` for unsupported filters (the
+///   `polling` crate forwards it as the registration error).
+/// * Some BSDs report `ENODEV`/`ENOTSUP`/`EOPNOTSUPP` for file types that
+///   cannot be monitored.
+///
+/// Such fds cannot produce readiness events: the kernel treats them as always
+/// ready, and their operations either complete immediately or block (e.g. disk
+/// I/O), which is what the blocking pool is for.
+fn is_not_pollable(e: &io::Error) -> bool {
+    const NOT_POLLABLE: &[i32] = &[
+        libc::EPERM,
+        libc::EINVAL,
+        libc::ENODEV,
+        libc::ENOTSUP,
+        libc::EOPNOTSUPP,
+    ];
+    e.raw_os_error()
+        .is_some_and(|code| NOT_POLLABLE.contains(&code))
 }
 
 /// Low-level driver of polling.
@@ -212,6 +244,18 @@ impl Driver {
             if queue.is_empty() {
                 registry.remove(&arg.fd);
             }
+            if need_add {
+                // The `polling` crate may insert the source before the interest
+                // is applied (the kqueue backend adds the fd to its source set
+                // before submitting the changes), so drop it here to keep the
+                // poller in sync with `registry`. Otherwise a later attempt
+                // would fail with `AlreadyExists`. The fd is not registered in
+                // the poller otherwise, so the error (e.g. `ENOENT` on epoll)
+                // is expected and ignored.
+                let _ = notify
+                    .poll
+                    .delete(unsafe { BorrowedFd::borrow_raw(arg.fd) });
+            }
         }
 
         res
@@ -247,22 +291,32 @@ impl Driver {
     }
 
     /// Remove one interest from the queue.
-    fn remove_one(&mut self, key: &ErasedKey, fd: RawFd) -> io::Result<()> {
+    ///
+    /// Returns whether the operation was waiting on `fd`, i.e. whether the
+    /// interest was actually removed.
+    fn remove_one(&mut self, key: &ErasedKey, fd: RawFd) -> io::Result<bool> {
         let Some(queue) = self.try_get_queue(fd) else {
-            return Ok(());
+            return Ok(false);
         };
-        queue.remove(key);
+        let removed = queue.remove(key);
         let renew_event = queue.event();
         if queue.is_empty() {
             self.registry.remove(&fd);
         }
-        self.renew(unsafe { BorrowedFd::borrow_raw(fd) }, renew_event)
+        self.renew(unsafe { BorrowedFd::borrow_raw(fd) }, renew_event)?;
+        Ok(removed)
     }
 
     /// Remove one interest from the queue, and emit a cancelled entry.
+    ///
+    /// Nothing is emitted if the operation was not waiting on `fd`: operations
+    /// that are executed on the blocking pool have no interest registered, and
+    /// cancelling them is a no-op like for [`Decision::Blocking`] operations.
     fn cancel_one(&mut self, key: ErasedKey, fd: RawFd) -> Option<Entry> {
-        self.remove_one(&key, fd)
-            .map_or(None, |_| Some(Entry::new_cancelled(key)))
+        match self.remove_one(&key, fd) {
+            Ok(true) => Some(Entry::new_cancelled(key)),
+            _ => None,
+        }
     }
 
     pub fn attach(&mut self, _fd: RawFd) -> io::Result<()> {
@@ -296,23 +350,42 @@ impl Driver {
         instrument!(compio_log::Level::TRACE, "push", ?key);
         match { key.borrow().carrier.pre_submit()? } {
             Decision::Wait(args) => {
-                key.borrow()
-                    .extra_mut()
-                    .as_poll_mut()
-                    .set_args(args.clone());
+                let mut registered = 0;
+                let mut first_err = None;
                 for arg in args.iter().copied() {
                     // SAFETY: fd is from the OpCode.
-                    let res = unsafe { self.submit(key.clone(), arg) };
-                    // if submission fails, remove all previously submitted fds.
-                    if let Err(e) = res {
-                        args.into_iter().for_each(|arg| {
-                            // we don't care about renew errors
-                            let _ = self.remove_one(&key, arg.fd);
-                        });
-                        return Poll::Ready(Err(e));
+                    match unsafe { self.submit(key.clone(), arg) } {
+                        Ok(()) => {
+                            registered += 1;
+                            trace!("register {:?}", arg);
+                        }
+                        Err(e) => {
+                            if first_err.is_none() {
+                                first_err = Some(e);
+                            }
+                        }
                     }
-                    trace!("register {:?}", arg);
                 }
+                if let Some(e) = first_err {
+                    // If any submission fails, remove all submitted fds.
+                    for arg in args.iter().copied() {
+                        // we don't care about renew errors
+                        let _ = self.remove_one(&key, arg.fd);
+                    }
+                    // None of the fds can be monitored for readiness (e.g. it
+                    // is a regular file or `/dev/null`, which `epoll`/`kqueue`
+                    // refuse to register), so the operation can never be woken
+                    // up. Run it on the blocking pool like a blocking call: it
+                    // either completes immediately or blocks the worker thread,
+                    // which is what a blocking call would do anyway.
+                    if registered == 0 && is_not_pollable(&e) {
+                        trace!("fds cannot be monitored ({e}), run on the blocking pool");
+                        self.push_blocking(key);
+                        return Poll::Pending;
+                    }
+                    return Poll::Ready(Err(e));
+                }
+                key.borrow().extra_mut().as_poll_mut().set_args(args);
                 Poll::Pending
             }
             Decision::Completed(res) => Poll::Ready(Ok(res)),

@@ -18,7 +18,11 @@ pub enum OpType {
 pub enum Decision {
     /// Instant operation, no need to submit
     Completed(usize),
-    /// Async operation, needs to submit
+    /// Async operation, needs to submit.
+    ///
+    /// If none of its fds can be monitored for readiness by the underlying
+    /// poller (e.g. a regular file on `epoll`), the operation is executed on
+    /// the blocking thread pool instead, like a blocking call.
     Wait(Multi<WaitArg>),
     /// Blocking operation, needs to be spawned in another thread
     Blocking,
