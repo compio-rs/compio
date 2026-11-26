@@ -1,4 +1,5 @@
 use std::{
+    collections::hash_map::Entry,
     io,
     mem::MaybeUninit,
     task::{Context, Poll},
@@ -95,6 +96,7 @@ impl RecvStream {
         state.conn.recv_stream(self.stream).stop(error_code)?;
         state.wake();
         self.all_data_read = true;
+        state.readable.remove(&self.stream);
         Ok(())
     }
 
@@ -194,6 +196,7 @@ impl RecvStream {
             ReadStatus::Readable(read) => Poll::Ready(Ok(Some(read))),
             ReadStatus::Finished(read) => {
                 self.all_data_read = true;
+                state.readable.remove(&self.stream);
                 Poll::Ready(Ok(read))
             }
             ReadStatus::Failed(read, Blocked) => match read {
@@ -202,7 +205,12 @@ impl RecvStream {
                     if let Some(error) = &state.error {
                         return Poll::Ready(Err(error.clone().into()));
                     }
-                    state.readable.insert(self.stream, cx.waker().clone());
+                    match state.readable.entry(self.stream) {
+                        Entry::Occupied(mut entry) => entry.get_mut().clone_from(cx.waker()),
+                        Entry::Vacant(entry) => {
+                            entry.insert(cx.waker().clone());
+                        }
+                    }
                     Poll::Pending
                 }
             },
@@ -210,6 +218,7 @@ impl RecvStream {
                 None => {
                     self.all_data_read = true;
                     self.reset = Some(error_code);
+                    state.readable.remove(&self.stream);
                     Poll::Ready(Err(ReadError::Reset(error_code)))
                 }
                 done => {
@@ -398,6 +407,14 @@ impl RecvStream {
 
 impl Drop for RecvStream {
     fn drop(&mut self) {
+        if self.all_data_read {
+            debug_assert!(
+                !self.conn.state().readable.contains_key(&self.stream),
+                "Stream {} should not have a blocked reader when all data read is true",
+                self.stream
+            );
+            return;
+        }
         let mut state = self.conn.state();
 
         // clean up any previously registered wakers
@@ -406,11 +423,9 @@ impl Drop for RecvStream {
         if state.error.is_some() || (self.is_0rtt && !state.check_0rtt()) {
             return;
         }
-        if !self.all_data_read {
-            // Ignore ClosedStream errors
-            let _ = state.conn.recv_stream(self.stream).stop(0u32.into());
-            state.wake();
-        }
+        // Ignore ClosedStream errors
+        let _ = state.conn.recv_stream(self.stream).stop(0u32.into());
+        state.wake();
     }
 }
 
