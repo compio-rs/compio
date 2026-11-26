@@ -1,3 +1,10 @@
+use std::{
+    future::Future,
+    pin::pin,
+    task::{Context, Waker},
+};
+
+use compio_io::AsyncWriteExt;
 use compio_quic::{ConnectionError, Endpoint, TransportConfig};
 use synchrony::unsync::async_flag::AsyncFlag;
 
@@ -108,6 +115,51 @@ async fn stream_id_flow_control() {
 
     drop(conn1);
     drop(conn2);
+
+    endpoint.shutdown().await.unwrap();
+}
+
+/// The actual check is the `debug_assert` in `RecvStream::drop`: no reader may
+/// stay registered once all data is read.
+#[compio_macros::test]
+async fn recv_stream_cancel_stop_drop() {
+    let _guard = subscribe();
+
+    let (server_config, client_config) = config_pair(None);
+    let mut endpoint = Endpoint::server("127.0.0.1:0", server_config)
+        .await
+        .unwrap();
+    endpoint.default_client_config = Some(client_config);
+
+    let recv_dropped = AsyncFlag::new();
+    let recv_dropped_handle = recv_dropped.handle();
+
+    join!(
+        async {
+            let conn = endpoint.wait_incoming().await.unwrap().await.unwrap();
+            let mut recv = conn.accept_uni().await.unwrap();
+            {
+                let mut fut = pin!(recv.read_to_end(vec![]));
+                let mut cx = Context::from_waker(Waker::noop());
+                assert!(fut.as_mut().poll(&mut cx).is_pending());
+            }
+            recv.stop(0u32.into()).unwrap();
+            drop(recv);
+            recv_dropped_handle.notify();
+        },
+        async {
+            let conn = endpoint
+                .connect(endpoint.local_addr().unwrap(), "localhost", None)
+                .unwrap()
+                .await
+                .unwrap();
+            let mut send = conn.open_uni().unwrap();
+            send.write_all(b"hello").await.unwrap();
+            // Finishing the stream here could let the server's read complete
+            // instead of staying pending.
+            recv_dropped.wait().await;
+        },
+    );
 
     endpoint.shutdown().await.unwrap();
 }

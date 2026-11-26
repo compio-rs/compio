@@ -26,7 +26,7 @@ compio-log = { workspace = true }
 compio-net = { workspace = true }
 compio-runtime = { workspace = true, features = ["time"] }
 
-quinn-proto = { version = "0.11.13", default-features = false }
+quinn-proto = { version = "0.11.19", default-features = false }
 rustls = { workspace = true }
 rustls-platform-verifier = { workspace = true, optional = true }
 rustls-native-certs = { workspace = true, optional = true }
@@ -62,7 +62,7 @@ compio-runtime = { workspace = true, features = ["criterion"] }
 
 criterion = { workspace = true, features = ["async_tokio"] }
 http = "1.1.0"
-quinn = "0.11.9"
+quinn = "0.11.12"
 rand = { workspace = true }
 rcgen = { workspace = true }
 socket2 = { workspace = true, features = ["all"] }
