@@ -332,6 +332,11 @@ macro_rules! conn_fn {
             self.0.state().conn.rtt()
         }
 
+        /// Minimum RTT seen on this path, ignoring ack delay.
+        pub fn min_rtt(&self) -> Duration {
+            self.0.state().conn.min_rtt()
+        }
+
         /// Connection statistics.
         pub fn stats(&self) -> ConnectionStats {
             self.0.state().conn.stats()
