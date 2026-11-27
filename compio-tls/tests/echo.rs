@@ -1,11 +1,13 @@
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};
 
 use compio_runtime::{JoinHandle, fd::PollFd};
-use compio_tls::{TlsAcceptor, TlsConnector};
+use compio_tls::{TlsAcceptor, TlsConnector, TlsStream};
 use futures_util::{AsyncReadExt, AsyncWriteExt};
 use socket2::{Domain, Protocol, Socket, Type};
 
-async fn start_server(acceptor: TlsAcceptor) -> (SocketAddr, JoinHandle<()>) {
+async fn start_server(
+    acceptor: TlsAcceptor,
+) -> (SocketAddr, JoinHandle<TlsStream<PollFd<Socket>>>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let addr = listener.local_addr().unwrap();
@@ -19,11 +21,12 @@ async fn start_server(acceptor: TlsAcceptor) -> (SocketAddr, JoinHandle<()>) {
         stream.flush().await.unwrap();
         stream.close().await.unwrap();
         assert_eq!(stream.read(&mut [0]).await.unwrap(), 0);
+        stream
     });
     (addr, server)
 }
 
-async fn connect(connector: TlsConnector, addr: SocketAddr) {
+async fn connect(connector: TlsConnector, addr: SocketAddr) -> TlsStream<PollFd<Socket>> {
     let stream = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
     let stream = PollFd::new(stream).unwrap();
     stream.connect(&addr.into()).await.unwrap();
@@ -34,7 +37,8 @@ async fn connect(connector: TlsConnector, addr: SocketAddr) {
     let mut res = vec![];
     stream.read_to_end(&mut res).await.unwrap();
     assert_eq!(res, b"Hello world!");
-    stream.close().await.unwrap()
+    stream.close().await.unwrap();
+    stream
 }
 
 #[cfg(feature = "native-tls")]
@@ -115,8 +119,15 @@ async fn rtls() {
             .with_no_client_auth(),
     ));
 
-    connect(connector, addr).await;
-    server.await.unwrap();
+    let client_stream = connect(connector, addr).await;
+    let client_conn: &rustls::ClientConnection = (&client_stream).try_into().unwrap();
+    assert_eq!(
+        client_conn.peer_certificates().unwrap().first().unwrap(),
+        cert.der()
+    );
+    let server_stream = server.await.unwrap();
+    let server_conn: &rustls::ServerConnection = (&server_stream).try_into().unwrap();
+    assert_eq!(server_conn.server_name(), Some("localhost"));
 }
 
 #[cfg(feature = "py-dynamic-openssl")]
