@@ -1,5 +1,7 @@
 use std::{
     borrow::Cow,
+    error::Error,
+    fmt::Display,
     io,
     pin::Pin,
     task::{Context, Poll},
@@ -78,6 +80,47 @@ where
     }
 }
 
+/// Error returned when converting a [`TlsStream`] reference into a
+/// backend-specific connection fails.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TryFromTlsStreamError {
+    /// The stream is backed by a different TLS implementation.
+    BackendMismatch,
+    /// Expected a server connection, but found a client connection.
+    #[cfg(feature = "rustls")]
+    UnexpectedClient,
+    /// Expected a client connection, but found a server connection.
+    #[cfg(feature = "rustls")]
+    UnexpectedServer,
+}
+
+impl Display for TryFromTlsStreamError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TryFromTlsStreamError::BackendMismatch => {
+                f.write_str("stream is backed by a different TLS implementation")
+            }
+            #[cfg(feature = "rustls")]
+            TryFromTlsStreamError::UnexpectedClient => {
+                f.write_str("expected a server connection, but found a client connection")
+            }
+            #[cfg(feature = "rustls")]
+            TryFromTlsStreamError::UnexpectedServer => {
+                f.write_str("expected a client connection, but found a server connection")
+            }
+        }
+    }
+}
+
+impl Error for TryFromTlsStreamError {}
+
+impl From<TryFromTlsStreamError> for std::io::Error {
+    fn from(value: TryFromTlsStreamError) -> Self {
+        io::Error::new(io::ErrorKind::InvalidInput, value)
+    }
+}
+
 #[cfg(feature = "native-tls")]
 #[doc(hidden)]
 impl<S> From<crate::native::TlsStream<S>> for TlsStream<S> {
@@ -106,11 +149,73 @@ impl<S> From<futures_rustls::server::TlsStream<S>> for TlsStream<S> {
     }
 }
 
+#[cfg(feature = "rustls")]
+impl<'a, S> TryFrom<&'a TlsStream<S>> for &'a rustls::ServerConnection {
+    type Error = TryFromTlsStreamError;
+
+    fn try_from(value: &'a TlsStream<S>) -> Result<Self, Self::Error> {
+        match &value.0 {
+            TlsStreamInner::Rustls(tls_stream) => match tls_stream {
+                futures_rustls::TlsStream::Server(tls_stream) => Ok(tls_stream.get_ref().1),
+                futures_rustls::TlsStream::Client(_) => {
+                    Err(TryFromTlsStreamError::UnexpectedClient)
+                }
+            },
+            #[allow(unreachable_patterns)]
+            _ => Err(TryFromTlsStreamError::BackendMismatch),
+        }
+    }
+}
+
+#[cfg(feature = "rustls")]
+impl<'a, S> TryFrom<&'a TlsStream<S>> for &'a rustls::ClientConnection {
+    type Error = TryFromTlsStreamError;
+
+    fn try_from(value: &'a TlsStream<S>) -> Result<Self, Self::Error> {
+        match &value.0 {
+            TlsStreamInner::Rustls(tls_stream) => match tls_stream {
+                futures_rustls::TlsStream::Client(tls_stream) => Ok(tls_stream.get_ref().1),
+                futures_rustls::TlsStream::Server(_) => {
+                    Err(TryFromTlsStreamError::UnexpectedServer)
+                }
+            },
+            #[allow(unreachable_patterns)]
+            _ => Err(TryFromTlsStreamError::BackendMismatch),
+        }
+    }
+}
+
+#[cfg(feature = "rustls")]
+impl<'a, S> TryFrom<&'a TlsStream<S>> for &'a rustls::CommonState {
+    type Error = TryFromTlsStreamError;
+
+    fn try_from(value: &'a TlsStream<S>) -> Result<Self, Self::Error> {
+        match &value.0 {
+            TlsStreamInner::Rustls(tls_stream) => Ok(tls_stream.get_ref().1),
+            #[allow(unreachable_patterns)]
+            _ => Err(TryFromTlsStreamError::BackendMismatch),
+        }
+    }
+}
+
 #[cfg(feature = "py-dynamic-openssl")]
 #[doc(hidden)]
 impl<S> From<crate::py_ossl::TlsStream<S>> for TlsStream<S> {
     fn from(value: crate::py_ossl::TlsStream<S>) -> Self {
         Self(TlsStreamInner::PyDynamicOpenSsl(value))
+    }
+}
+
+#[cfg(feature = "py-dynamic-openssl")]
+impl<'a, S> TryFrom<&'a TlsStream<S>> for &'a compio_py_dynamic_openssl::ssl::Ssl {
+    type Error = TryFromTlsStreamError;
+
+    fn try_from(value: &'a TlsStream<S>) -> Result<Self, Self::Error> {
+        match &value.0 {
+            TlsStreamInner::PyDynamicOpenSsl(tls_stream) => Ok(tls_stream.get_ref().ssl()),
+            #[allow(unreachable_patterns)]
+            _ => Err(TryFromTlsStreamError::BackendMismatch),
+        }
     }
 }
 
