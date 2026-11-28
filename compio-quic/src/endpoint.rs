@@ -6,7 +6,6 @@ use std::{
     mem::ManuallyDrop,
     net::{SocketAddr, SocketAddrV6},
     ops::Deref,
-    pin::pin,
     ptr,
     sync::Arc,
     task::{Context, Poll, Waker},
@@ -20,7 +19,7 @@ use compio_net::ToSocketAddrsAsync;
 use compio_net::UdpSocket;
 use compio_runtime::{JoinHandle, SpawnMeta};
 use flume::{Receiver, Sender, unbounded};
-use futures_util::{FutureExt, StreamExt, future, select, task::AtomicWaker};
+use futures_util::{StreamExt, future, select, stream::FuturesUnordered, task::AtomicWaker};
 use quinn_proto::{
     ClientConfig, ConnectError, ConnectionError, ConnectionHandle, DatagramEvent, EndpointConfig,
     EndpointEvent, ServerConfig, Transmit, VarInt,
@@ -301,27 +300,26 @@ impl EndpointInner {
     }
 
     async fn run(&self) -> io::Result<()> {
+        // PERFORMANCE: keep 4 UDP receivers pending per endpoint
+        const RECEIVE_DEPTH: usize = 4;
+        let capacity = self
+            .state
+            .lock()
+            .endpoint
+            .config()
+            .get_max_udp_payload_size()
+            .min(64 * 1024) as usize
+            * self.socket.max_gro_segments();
         let respond_fn = |buf: Vec<u8>, transmit: Transmit| self.respond(buf, transmit);
-
-        let mut recv_fut = pin!(
-            self.socket
-                .recv(Vec::with_capacity(
-                    self.state
-                        .lock()
-                        .endpoint
-                        .config()
-                        .get_max_udp_payload_size()
-                        .min(64 * 1024) as usize
-                        * self.socket.max_gro_segments(),
-                ))
-                .fuse()
-        );
+        let mut receives: FuturesUnordered<_> = (0..RECEIVE_DEPTH)
+            .map(|_| self.socket.recv(Vec::with_capacity(capacity)))
+            .collect();
 
         let mut event_stream = self.events.1.stream().ready_chunks(100);
 
         loop {
             let mut state = select! {
-                BufResult(res, recv_buf) = recv_fut => {
+                BufResult(res, recv_buf) = receives.select_next_some() => {
                     let mut state = self.state.lock();
                     match res {
                         Ok(meta) => state.handle_data(meta, &recv_buf, respond_fn),
@@ -330,7 +328,7 @@ impl EndpointInner {
                         Err(e) if e.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_PORT_UNREACHABLE as _) => {}
                         Err(e) => break Err(e),
                     }
-                    recv_fut.set(self.socket.recv(recv_buf).fuse());
+                    receives.push(self.socket.recv(recv_buf));
                     state
                 },
                 events = event_stream.select_next_some() => {
